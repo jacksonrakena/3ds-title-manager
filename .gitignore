@@ -1,6 +1,5 @@
 .vscode/
 bin/linux/save3ds_fuse
-**/finalize
 cstins/
 testing-class.py
 
