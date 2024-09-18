@@ -478,13 +478,35 @@ class CustomInstallGUI(ttk.Frame):
             soup = BeautifulSoup(query_page.text, 'html.parser')
             for game in soup.find_all(name='a', attrs={
                     'class': 'list-entry block-link'}):
-                title_node = game.find(name='h3', attrs={
+                game_title = game.find(name='h3', attrs={
                     'class': 'green bold nospace'})
-                if title_node is not None:
-                    name = title_node.contents[0]
-                    print(title_node.contents)
-                    self.search.insert('', tk.END, text=name, iid=name,
-                                       values=(game.attrs['href'], name, name, name))
+                if game_title is None:
+                    continue
+                game_title = game_title.contents[0]
+                print(game_title)
+
+                site_id = None
+                title_id = None
+                size = None
+                version = None
+                title_type = None
+                data_nodes = game.find_all(
+                    name='div', attrs={'class': 'meta-content'})
+                for node in data_nodes:
+                    members = list(node.findChildren('span'))
+                    name = members[-1].text
+                    if name == 'Title ID':
+                        title_id = members[-2].text
+                    elif name == 'Version':
+                        version = members[-2].text
+                    elif name == 'ID':
+                        site_id = members[-2].text
+                    elif name == 'Content Type':
+                        title_type = members[-2].text
+                if site_id is not None:
+                    print(f'{name} type={title_type}')
+                    self.search.insert('', tk.END, iid=site_id,
+                                       values=(site_id, game_title, title_type, version))
             pass
         search_start = ttk.Button(
             search_frame, text='Search', command=begin_search)
@@ -539,7 +561,7 @@ class CustomInstallGUI(ttk.Frame):
                 maximum=len(self.queue.get_children()), value=0)
             fnames = []
             for item in self.queue.get_children():
-                target_item_url = 'https://hshop.erista.me' + item
+                target_item_url = 'https://hshop.erista.me/t/' + item
                 import cgi
 
                 import requests
