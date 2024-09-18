@@ -526,6 +526,83 @@ class CustomInstallGUI(ttk.Frame):
         self.queue.column('name', width=200, anchor=tk.W)
         self.queue.heading('name', text='Title name')
 
+        def sizeof_fmt(num, suffix="B"):
+            for unit in ("", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"):
+                if abs(num) < 1024.0:
+                    return f"{num:3.1f}{unit}{suffix}"
+                num /= 1024.0
+            return f"{num:.1f}Yi{suffix}"
+
+        def start_downloads():
+            completed = 0
+            self.download_item_progress.configure(
+                maximum=len(self.queue.get_children()), value=0)
+            fnames = []
+            for item in self.queue.get_children():
+                target_item_url = 'https://hshop.erista.me' + item
+                import cgi
+
+                import requests
+                from bs4 import BeautifulSoup
+                self.pg_text.configure(
+                    text='Fetching download URL for ' + item)
+                text = requests.get(
+                    target_item_url).text
+                bsoup = BeautifulSoup(text, 'html.parser')
+                download_url = bsoup.find_all(name='div', attrs={
+                    'class': 'ddl-section'})[0].find_all(name='a')[0].attrs['href']
+
+                import random
+                self.pg_text.configure(text='Starting download for ' + item)
+                file_resp = requests.get(download_url, stream=True)
+                size = int(file_resp.headers['Content-Length'])
+                self.current_download_progress.configure(maximum=size)
+                _, params = cgi.parse_header(
+                    file_resp.headers['Content-Disposition'])
+                fname = params['filename']
+                print(fname)
+                lsz = 0
+                with open('downloads/' + fname, 'wb') as handle:
+                    for data in file_resp.iter_content(chunk_size=8192):
+                        lsz += len(data)
+                        self.current_download_progress.configure(value=lsz)
+                        handle.write(data)
+                        self.pg_text.configure(
+                            text=sizeof_fmt(lsz) + '/'+sizeof_fmt(size))
+                completed += 1
+                self.download_item_progress.configure(value=completed)
+                fnames.append('downloads/' + fname)
+            self.pg_text.configure(
+                text='Completed ' + str(len(self.queue.get_children())) + ' downloads')
+
+            results = {}
+            for f in fnames:
+                success, reason = self.add_cia(f)
+                if not success:
+                    results[f] = reason
+
+            if results:
+                title_read_fail_window = TitleReadFailResults(
+                    self.parent, failed=results)
+                title_read_fail_window.focus()
+            self.sort_treeview()
+
+        def start_queue():
+            Thread(target=start_downloads).start()
+        download_button = ttk.Button(
+            search_frame, text='Download', command=start_queue)
+        download_button.grid(row=1, column=1, sticky=tk.NSEW)
+
+        self.download_item_progress = ttk.Progressbar(
+            search_frame, orient=tk.HORIZONTAL, mode='determinate')
+        self.download_item_progress.grid(row=3, column=1, sticky=tk.NSEW)
+
+        self.pg_text = ttk.Label(search_frame, text='')
+        self.pg_text.grid(row=4, column=1, sticky=tk.NSEW)
+        self.current_download_progress = ttk.Progressbar(
+            search_frame, orient=tk.HORIZONTAL, mode='determinate')
+        self.current_download_progress.grid(row=2, column=1, sticky=tk.NSEW)
+
         # ---------------------------------------------------------------- #
         # create treeview
         treeview_frame = ttk.Frame(self)
