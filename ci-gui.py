@@ -6,26 +6,27 @@
 # This file is licensed under The MIT License (MIT).
 # You can find the full license text in LICENSE.md in the root of this project.
 
-from os import environ, scandir
-from os.path import abspath, basename, dirname, join, isfile
 import sys
-from threading import Thread, Lock
-from time import strftime
-from traceback import format_exception
 import tkinter as tk
-import tkinter.ttk as ttk
 import tkinter.filedialog as fd
 import tkinter.messagebox as mb
+import tkinter.ttk as ttk
+from os import environ, scandir
+from os.path import abspath, basename, dirname, isfile, join
+from threading import Lock, Thread
+from time import strftime
+from traceback import format_exception
 from typing import TYPE_CHECKING
 
-from pyctr.crypto import MissingSeedError, CryptoEngine, load_seeddb
+from pyctr.crypto import CryptoEngine, MissingSeedError, load_seeddb
 from pyctr.crypto.engine import b9_paths
-from pyctr.util import config_dirs
 from pyctr.type.cdn import CDNError
 from pyctr.type.cia import CIAError
 from pyctr.type.tmd import TitleMetadataError
+from pyctr.util import config_dirs
 
-from custominstall import CustomInstall, CI_VERSION, load_cifinish, InvalidCIFinishError, InstallStatus
+from custominstall import (CI_VERSION, CustomInstall, InstallStatus,
+                           InvalidCIFinishError, load_cifinish)
 
 if TYPE_CHECKING:
     from os import PathLike
@@ -45,7 +46,8 @@ if is_windows:
 
         tbl = cc.GetModule('TaskbarLib.tlb')
 
-        taskbar = cc.CreateObject('{56FDF344-FD6D-11D0-958A-006097C9A090}', interface=tbl.ITaskbarList3)
+        taskbar = cc.CreateObject(
+            '{56FDF344-FD6D-11D0-958A-006097C9A090}', interface=tbl.ITaskbarList3)
         taskbar.HrInit()
     except (ModuleNotFoundError, UnicodeEncodeError, AttributeError):
         pass
@@ -104,7 +106,8 @@ class ConsoleFrame(ttk.Frame):
         scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL)
         scrollbar.grid(row=0, column=1, sticky=tk.NSEW)
 
-        self.text = tk.Text(self, highlightthickness=0, wrap='word', yscrollcommand=scrollbar.set)
+        self.text = tk.Text(self, highlightthickness=0,
+                            wrap='word', yscrollcommand=scrollbar.set)
         self.text.grid(row=0, column=0, sticky=tk.NSEW)
 
         scrollbar.config(command=self.text.yview)
@@ -131,7 +134,8 @@ def simple_listbox_frame(parent, title: 'str', items: 'List[str]'):
     scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL)
     scrollbar.grid(row=0, column=1, sticky=tk.NSEW)
 
-    box = tk.Listbox(frame, highlightthickness=0, yscrollcommand=scrollbar.set, selectmode=tk.EXTENDED)
+    box = tk.Listbox(frame, highlightthickness=0,
+                     yscrollcommand=scrollbar.set, selectmode=tk.EXTENDED)
     box.grid(row=0, column=0, sticky=tk.NSEW)
     scrollbar.config(command=box.yview)
 
@@ -161,7 +165,8 @@ class TitleReadFailResults(tk.Toplevel):
         outer_container.rowconfigure(1, weight=1)
         outer_container.columnconfigure(0, weight=1)
 
-        message_label = ttk.Label(outer_container, text="Some titles couldn't be added.")
+        message_label = ttk.Label(
+            outer_container, text="Some titles couldn't be added.")
         message_label.grid(row=0, column=0, sticky=tk.NSEW, padx=10, pady=10)
 
         treeview_frame = ttk.Frame(outer_container)
@@ -172,7 +177,8 @@ class TitleReadFailResults(tk.Toplevel):
         treeview_scrollbar = ttk.Scrollbar(treeview_frame, orient=tk.VERTICAL)
         treeview_scrollbar.grid(row=0, column=1, sticky=tk.NSEW)
 
-        treeview = ttk.Treeview(treeview_frame, yscrollcommand=treeview_scrollbar.set)
+        treeview = ttk.Treeview(
+            treeview_frame, yscrollcommand=treeview_scrollbar.set)
         treeview.grid(row=0, column=0, sticky=tk.NSEW, padx=10, pady=(0, 10))
         treeview.configure(columns=('filepath', 'reason'), show='headings')
 
@@ -184,7 +190,8 @@ class TitleReadFailResults(tk.Toplevel):
         treeview_scrollbar.configure(command=treeview.yview)
 
         for path, reason in failed.items():
-            treeview.insert('', tk.END, text=path, iid=path, values=(basename(path), reason))
+            treeview.insert('', tk.END, text=path, iid=path,
+                            values=(basename(path), reason))
 
         ok_frame = ttk.Frame(outer_container)
         ok_frame.grid(row=2, column=0, sticky=tk.NSEW, padx=10, pady=(0, 10))
@@ -242,12 +249,14 @@ class InstallResults(tk.Toplevel):
 
         if install_state['installed']:
             outer_container.rowconfigure(1, weight=1)
-            frame = simple_listbox_frame(outer_container, 'Installed', install_state['installed'])
+            frame = simple_listbox_frame(
+                outer_container, 'Installed', install_state['installed'])
             frame.grid(row=1, column=0, sticky=tk.NSEW, padx=10, pady=(0, 10))
 
         if install_state['failed']:
             outer_container.rowconfigure(2, weight=1)
-            frame = simple_listbox_frame(outer_container, 'Failed', install_state['failed'])
+            frame = simple_listbox_frame(
+                outer_container, 'Failed', install_state['failed'])
             frame.grid(row=2, column=0, sticky=tk.NSEW, padx=10, pady=(0, 10))
 
         ok_frame = ttk.Frame(outer_container)
@@ -322,7 +331,6 @@ class CustomInstallGUI(ttk.Frame):
                     if filename == 'seeddb.bin':
                         load_seeddb(path)
 
-
         sd_type_label = ttk.Label(file_pickers, text='SD root')
         sd_type_label.grid(row=0, column=0)
 
@@ -335,9 +343,11 @@ class CustomInstallGUI(ttk.Frame):
         self.file_picker_textboxes['sd'] = sd_selected
 
         def auto_input_filename(self, f, filename):
-            sd_msed_path = find_first_file([join(f, 'gm9', 'out', filename), join(f, filename)])
+            sd_msed_path = find_first_file(
+                [join(f, 'gm9', 'out', filename), join(f, filename)])
             if sd_msed_path:
-                self.log('Found ' + filename + ' on SD card at ' + sd_msed_path)
+                self.log('Found ' + filename +
+                         ' on SD card at ' + sd_msed_path)
                 if filename.endswith('bin'):
                     filename = filename.split('.')[0]
                 box = self.file_picker_textboxes[filename]
@@ -345,6 +355,7 @@ class CustomInstallGUI(ttk.Frame):
                 box.insert(tk.END, sd_msed_path)
                 return sd_msed_path
         # This feels so wrong.
+
         def create_required_file_picker(type_name, types, default, row, callback=lambda filename: None):
             def internal_callback():
                 f = fd.askopenfilename(parent=parent, title='Select ' + type_name, filetypes=types,
@@ -362,7 +373,8 @@ class CustomInstallGUI(ttk.Frame):
             if default:
                 selected.insert(tk.END, default)
 
-            button = ttk.Button(file_pickers, text='...', command=internal_callback)
+            button = ttk.Button(file_pickers, text='...',
+                                command=internal_callback)
             button.grid(row=row, column=2)
 
             self.file_picker_textboxes[type_name] = selected
@@ -374,9 +386,12 @@ class CustomInstallGUI(ttk.Frame):
         def seeddb_callback(path: 'Union[PathLike, bytes, str]'):
             load_seeddb(path)
 
-        create_required_file_picker('boot9', [('boot9 file', '*.bin')], default_b9_path, 1, b9_callback)
-        create_required_file_picker('seeddb', [('seeddb file', '*.bin')], default_seeddb_path, 2, seeddb_callback)
-        create_required_file_picker('movable.sed', [('movable.sed file', '*.sed')], default_movable_sed_path, 3)
+        create_required_file_picker(
+            'boot9', [('boot9 file', '*.bin')], default_b9_path, 1, b9_callback)
+        create_required_file_picker(
+            'seeddb', [('seeddb file', '*.bin')], default_seeddb_path, 2, seeddb_callback)
+        create_required_file_picker(
+            'movable.sed', [('movable.sed file', '*.sed')], default_movable_sed_path, 3)
 
         # ---------------------------------------------------------------- #
         # create buttons to add cias
@@ -393,11 +408,13 @@ class CustomInstallGUI(ttk.Frame):
                     results[f] = reason
 
             if results:
-                title_read_fail_window = TitleReadFailResults(self.parent, failed=results)
+                title_read_fail_window = TitleReadFailResults(
+                    self.parent, failed=results)
                 title_read_fail_window.focus()
             self.sort_treeview()
 
-        add_cias = ttk.Button(titlelist_buttons, text='Add CIAs', command=add_cias_callback)
+        add_cias = ttk.Button(
+            titlelist_buttons, text='Add CIAs', command=add_cias_callback)
         add_cias.grid(row=0, column=0)
 
         def add_cdn_callback():
@@ -407,17 +424,21 @@ class CustomInstallGUI(ttk.Frame):
                 if isfile(join(d, 'tmd')):
                     success, reason = self.add_cia(d)
                     if not success:
-                        self.show_error(f"Couldn't add {basename(d)}: {reason}")
+                        self.show_error(
+                            f"Couldn't add {basename(d)}: {reason}")
                     else:
                         self.sort_treeview()
                 else:
-                    self.show_error('tmd file not found in the CDN directory:\n' + d)
+                    self.show_error(
+                        'tmd file not found in the CDN directory:\n' + d)
 
-        add_cdn = ttk.Button(titlelist_buttons, text='Add CDN title folder', command=add_cdn_callback)
+        add_cdn = ttk.Button(
+            titlelist_buttons, text='Add CDN title folder', command=add_cdn_callback)
         add_cdn.grid(row=0, column=1)
 
         def add_dirs_callback():
-            d = fd.askdirectory(parent=parent, title='Select folder containing CIA files', initialdir=file_parent)
+            d = fd.askdirectory(
+                parent=parent, title='Select folder containing CIA files', initialdir=file_parent)
             if d:
                 results = {}
                 for f in scandir(d):
@@ -427,33 +448,99 @@ class CustomInstallGUI(ttk.Frame):
                             results[f] = reason
 
                 if results:
-                    title_read_fail_window = TitleReadFailResults(self.parent, failed=results)
+                    title_read_fail_window = TitleReadFailResults(
+                        self.parent, failed=results)
                     title_read_fail_window.focus()
                 self.sort_treeview()
 
-        add_dirs = ttk.Button(titlelist_buttons, text='Add folder', command=add_dirs_callback)
+        add_dirs = ttk.Button(
+            titlelist_buttons, text='Add folder', command=add_dirs_callback)
         add_dirs.grid(row=0, column=2)
 
         def remove_selected_callback():
             for entry in self.treeview.selection():
                 self.remove_cia(entry)
 
-        remove_selected = ttk.Button(titlelist_buttons, text='Remove selected', command=remove_selected_callback)
+        remove_selected = ttk.Button(
+            titlelist_buttons, text='Remove selected', command=remove_selected_callback)
         remove_selected.grid(row=0, column=3)
+
+        search_frame = ttk.Frame(self)
+        search_frame.grid(row=2, column=0, sticky=tk.NSEW)
+        search_frame.rowconfigure(0, weight=1)
+        search_frame.columnconfigure(0, weight=1)
+
+        def begin_search():
+            import requests
+            from bs4 import BeautifulSoup
+            query_page = requests.get(
+                'https://hshop.erista.me/c/games/s/north-america')
+            soup = BeautifulSoup(query_page.text, 'html.parser')
+            for game in soup.find_all(name='a', attrs={
+                    'class': 'list-entry block-link'}):
+                title_node = game.find(name='h3', attrs={
+                    'class': 'green bold nospace'})
+                if title_node is not None:
+                    name = title_node.contents[0]
+                    print(title_node.contents)
+                    self.search.insert('', tk.END, text=name, iid=name,
+                                       values=(game.attrs['href'], name, name, name))
+            pass
+        search_start = ttk.Button(
+            search_frame, text='Search', command=begin_search)
+        search_start.grid(row=1, column=0, sticky=tk.NSEW)
+
+        search_frame_scrollbar = ttk.Scrollbar(
+            search_frame, orient=tk.VERTICAL)
+        search_frame_scrollbar.grid(row=0, column=1, sticky=tk.NSEW)
+
+        self.search = ttk.Treeview(
+            search_frame, yscrollcommand=search_frame_scrollbar.set)
+        self.search.grid(row=0, column=0, sticky=tk.NSEW)
+        self.search.configure(
+            columns=('id', 'name', 'region', 'type'), show='headings')
+        self.search.column('id', width=200, anchor=tk.W)
+        self.search.column('name', width=200, anchor=tk.W)
+        self.search.column('region', width=200, anchor=tk.W)
+        self.search.column('type', width=200, anchor=tk.W)
+        self.search.heading('id', text='Title ID')
+        self.search.heading('name', text='Title name')
+        self.search.heading('region', text='Region')
+        self.search.heading('type', text='Type')
+
+        def on_search_item_clicked(event):
+            item = self.search.item(self.search.identify(
+                'item', event.x, event.y), "values")
+            id = item[0]
+            name = item[1]
+            self.queue.insert('', tk.END, text=id, iid=id,
+                              values=(id, name))
+            print(item)
+        self.search.bind('<Double-1>', on_search_item_clicked)
+
+        self.queue = ttk.Treeview(search_frame)
+        self.queue.grid(row=0, column=1, sticky=tk.NSEW)
+        self.queue.config(columns=('id', 'name'), show='headings')
+        self.queue.column('id', width=200, anchor=tk.W)
+        self.queue.heading('id', text='Title ID')
+        self.queue.column('name', width=200, anchor=tk.W)
+        self.queue.heading('name', text='Title name')
 
         # ---------------------------------------------------------------- #
         # create treeview
         treeview_frame = ttk.Frame(self)
-        treeview_frame.grid(row=2, column=0, sticky=tk.NSEW)
+        treeview_frame.grid(row=3, column=0, sticky=tk.NSEW)
         treeview_frame.rowconfigure(0, weight=1)
         treeview_frame.columnconfigure(0, weight=1)
 
         treeview_scrollbar = ttk.Scrollbar(treeview_frame, orient=tk.VERTICAL)
         treeview_scrollbar.grid(row=0, column=1, sticky=tk.NSEW)
 
-        self.treeview = ttk.Treeview(treeview_frame, yscrollcommand=treeview_scrollbar.set)
+        self.treeview = ttk.Treeview(
+            treeview_frame, yscrollcommand=treeview_scrollbar.set)
         self.treeview.grid(row=0, column=0, sticky=tk.NSEW)
-        self.treeview.configure(columns=('filepath', 'titleid', 'titlename', 'status'), show='headings')
+        self.treeview.configure(
+            columns=('filepath', 'titleid', 'titlename', 'status'), show='headings')
 
         self.treeview.column('filepath', width=200, anchor=tk.W)
         self.treeview.heading('filepath', text='File path')
@@ -469,14 +556,15 @@ class CustomInstallGUI(ttk.Frame):
         # ---------------------------------------------------------------- #
         # create progressbar
 
-        self.progressbar = ttk.Progressbar(self, orient=tk.HORIZONTAL, mode='determinate')
-        self.progressbar.grid(row=3, column=0, sticky=tk.NSEW)
+        self.progressbar = ttk.Progressbar(
+            self, orient=tk.HORIZONTAL, mode='determinate')
+        self.progressbar.grid(row=4, column=0, sticky=tk.NSEW)
 
         # ---------------------------------------------------------------- #
         # create start and console buttons
 
         control_frame = ttk.Frame(self)
-        control_frame.grid(row=4, column=0)
+        control_frame.grid(row=5, column=0)
 
         self.skip_contents_var = tk.IntVar()
         skip_contents_checkbox = ttk.Checkbutton(control_frame, text='Skip contents (only add to title database)',
@@ -488,16 +576,19 @@ class CustomInstallGUI(ttk.Frame):
                                                    variable=self.overwrite_saves_var)
         overwrite_saves_checkbox.grid(row=0, column=1)
 
-        show_console = ttk.Button(control_frame, text='Show console', command=self.open_console)
+        show_console = ttk.Button(
+            control_frame, text='Show console', command=self.open_console)
         show_console.grid(row=0, column=2)
 
-        start = ttk.Button(control_frame, text='Start install', command=self.start_install)
+        start = ttk.Button(control_frame, text='Start install',
+                           command=self.start_install)
         start.grid(row=0, column=3)
 
         self.status_label = ttk.Label(self, text='Waiting...')
-        self.status_label.grid(row=5, column=0, sticky=tk.NSEW)
+        self.status_label.grid(row=6, column=0, sticky=tk.NSEW)
 
-        self.log(f'custom-install {CI_VERSION} - https://github.com/ihaveamac/custom-install', status=False)
+        self.log(
+            f'custom-install {CI_VERSION} - https://github.com/ihaveamac/custom-install', status=False)
 
         if is_windows and not taskbar:
             self.log('Note: Could not load taskbar lib.')
@@ -505,16 +596,19 @@ class CustomInstallGUI(ttk.Frame):
 
         self.log('Ready.')
 
-        self.require_boot9 = (add_cias, add_cdn, add_dirs, remove_selected, start)
+        self.require_boot9 = (add_cias, add_cdn, add_dirs,
+                              remove_selected, start)
 
         self.disable_buttons()
         self.check_b9_loaded()
         self.enable_buttons()
         if not self.b9_loaded:
-            self.log('Note: boot9 was not auto-detected. Please choose it before adding any titles.')
+            self.log(
+                'Note: boot9 was not auto-detected. Please choose it before adding any titles.')
 
     def sort_treeview(self):
-        l = [(self.treeview.set(k, 'titlename'), k) for k in self.treeview.get_children()]
+        l = [(self.treeview.set(k, 'titlename'), k)
+             for k in self.treeview.get_children()]
         # sort by title name
         l.sort(key=lambda x: x[0].lower())
 
@@ -523,7 +617,8 @@ class CustomInstallGUI(ttk.Frame):
 
     def check_b9_loaded(self):
         if not self.b9_loaded:
-            boot9 = self.file_picker_textboxes['boot9'].get('1.0', tk.END).strip()
+            boot9 = self.file_picker_textboxes['boot9'].get(
+                '1.0', tk.END).strip()
             try:
                 tmp_crypto = CryptoEngine(boot9=boot9)
                 self.b9_loaded = tmp_crypto.b9_keys_set
@@ -553,7 +648,8 @@ class CustomInstallGUI(ttk.Frame):
         if reader.tmd.title_id.startswith('00048'):
             return False, 'DSiWare is not supported'
         try:
-            title_name = reader.contents[0].exefs.icon.get_app_title().short_desc
+            title_name = reader.contents[0].exefs.icon.get_app_title(
+            ).short_desc
         except:
             title_name = '(No title)'
         self.treeview.insert('', tk.END, text=path, iid=path,
@@ -622,8 +718,10 @@ class CustomInstallGUI(ttk.Frame):
 
     def start_install(self):
         sd_root = self.file_picker_textboxes['sd'].get('1.0', tk.END).strip()
-        seeddb = self.file_picker_textboxes['seeddb'].get('1.0', tk.END).strip()
-        movable_sed = self.file_picker_textboxes['movable.sed'].get('1.0', tk.END).strip()
+        seeddb = self.file_picker_textboxes['seeddb'].get(
+            '1.0', tk.END).strip()
+        movable_sed = self.file_picker_textboxes['movable.sed'].get(
+            '1.0', tk.END).strip()
 
         if not sd_root:
             self.show_error('SD root is not specified.')
@@ -682,7 +780,8 @@ class CustomInstallGUI(ttk.Frame):
         def ci_update_percentage(total_percent, total_read, size):
             self.progressbar.config(value=total_percent + finished_percent)
             if taskbar:
-                taskbar.SetProgressValue(self.hwnd, int(total_percent + finished_percent), max_percentage)
+                taskbar.SetProgressValue(self.hwnd, int(
+                    total_percent + finished_percent), max_percentage)
 
         def ci_on_error(exc):
             if taskbar:
@@ -697,7 +796,8 @@ class CustomInstallGUI(ttk.Frame):
             nonlocal finished_percent
             finished_percent = idx * 100
             if taskbar:
-                taskbar.SetProgressValue(self.hwnd, finished_percent, max_percentage)
+                taskbar.SetProgressValue(
+                    self.hwnd, finished_percent, max_percentage)
 
         installer.event.on_log_msg += ci_on_log_msg
         installer.event.update_percentage += ci_update_percentage
