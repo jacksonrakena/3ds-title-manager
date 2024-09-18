@@ -633,7 +633,7 @@ class CustomInstallGUI(ttk.Frame):
         existing_games_frame.grid(row=7, column=0, sticky=tk.NSEW)
 
         self.existing_game_tv = ttk.Treeview(existing_games_frame)
-        self.existing_game_tv.grid(row=1, column=0, sticky=tk.NSEW)
+        self.existing_game_tv.grid(row=2, column=0, sticky=tk.NSEW)
         self.existing_game_tv.configure(
             columns=('id', 'name', 'type'), show='headings')
 
@@ -646,38 +646,69 @@ class CustomInstallGUI(ttk.Frame):
                 '1.0', tk.END).strip()
             boot9 = self.file_picker_textboxes['boot9'].get(
                 '1.0', tk.END).strip()
+            self.update_search_text.configure(text='Reading title IDs')
             from lib import get_existing_title_ids
             t_ids = get_existing_title_ids(boot9, movable_sed, sd_root)
+            self.update_search_progress.configure(
+                value=0, maximum=len(t_ids)-1)
             install_queue = []
-            for t_id in t_ids:
-                if t_id[7] in ['c', 'e']:
+            valid_title_count
+            for i,_ in enumerate(t_ids):
+
+            for i, t_id in enumerate(t_ids):
+                self.update_search_progress.configure(value=i)
+                print(t_id)
+                print(t_id[7])
+                if t_id[7].lower() in ['c', 'e']:
                     print(f'Update/DLC for {t_id}')
                     continue
                 hshop_title = find_hshop_title(t_id)
                 if hshop_title is None:
                     continue
+                self.update_search_text.configure(
+                    text=f'{(i+1)}/{len(t_ids)}: {hshop_title.name}')
                 related_content = find_candidate_linked_content(
                     hshop_title.hshop_id)
+                self.existing_game_tv.insert
                 print(f'{hshop_title.name} ({hshop_title.title_id})')
+                self.existing_game_tv.insert('', tk.END, text=hshop_title.title_id, iid=hshop_title.title_id,
+                                             values=(hshop_title.title_id, hshop_title.name, 'Game'), open=True)
                 for r in related_content:
                     installed = r.related_item.title_id in t_ids
+                    result = None
                     if installed:
                         print(
                             f'- ✓ {r.relation_type} ({r.related_item.title_id}) installed')
+                        result = f'{r.relation_type}, installed'
                     else:
                         print(
                             f'- ✗ {r.relation_type} ({r.related_item.title_id}) not installed')
                         install_queue.append(r)
+                        result = f'{r.relation_type}, not installed'
+                    self.existing_game_tv.insert(hshop_title.title_id, tk.END, text=r.related_item.title_id, iid=r.related_item.title_id, values=(
+                        r.related_item.title_id, r.related_item.name, result), open=True)
             print('Queue to install:')
             for q in install_queue:
                 print(f'- {q.relation_type} for {q.related_item.name} ({
                       q.related_item.title_id}/{q.related_item.hshop_id})')
                 self.queue.insert('', tk.END, text=q.related_item.hshop_id, iid=q.related_item.hshop_id,
                                   values=(q.related_item.hshop_id, q.related_item.name))
-        pass
+
         load_all_btn = ttk.Button(
-            existing_games_frame, text='Search for existing games', command=search_existing)
+            existing_games_frame, text='Search for existing games', command=lambda: Thread(target=search_existing).start())
         load_all_btn.grid(row=0, column=0, sticky=tk.NSEW)
+
+        label_pair_frame = ttk.Frame(existing_games_frame)
+        label_pair_frame.grid(row=1, column=0, sticky=tk.NSEW)
+
+        self.update_search_progress = ttk.Progressbar(
+            label_pair_frame, orient=tk.HORIZONTAL, mode='determinate')
+        self.update_search_progress.grid(
+            row=0, column=1, columnspan=3, sticky=tk.NSEW)
+
+        self.update_search_text = ttk.Label(
+            label_pair_frame, text='Not searching')
+        self.update_search_text.grid(row=0, column=0, sticky=tk.NSEW)
 
         # ---------------------------------------------------------------- #
         # create treeview

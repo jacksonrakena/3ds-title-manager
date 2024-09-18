@@ -73,6 +73,8 @@ def find_hshop_title(title_id: str):
     meta = _compile_meta_node(meta_section)
     title = meta_section.find_all(
         name='h3', attrs={'class': 'green bold nospace'})[0].text
+    if meta.title_id != title_id:
+        return None
     return Title(meta.hshop_id, meta.title_id, meta.size, meta.version, meta.type, meta.product_code, title)
 
 

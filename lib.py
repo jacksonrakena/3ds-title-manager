@@ -42,7 +42,7 @@ def get_sd_path(sd_path, crypto):
     return [sd_path, id1s]
 
 
-def get_existing_title_ids(boot9, movable, root_sd_path):
+def get_existing_title_ids(boot9, movable, root_sd_path) -> list[str]:
     if frozen:
         save3ds_fuse_path = join(script_dir, 'bin', 'save3ds_fuse')
     else:
@@ -115,4 +115,4 @@ def get_existing_title_ids(boot9, movable, root_sd_path):
                 continue
 
             titles.append(l[1:].upper())
-        return titles
+        return list(set(titles))
