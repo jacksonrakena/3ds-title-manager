@@ -1,12 +1,24 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)]() ![Releases](https://img.shields.io/github/downloads/ihaveamac/custom-install/total.svg)
 
-# custom-install
-Installs a title directly to an SD card for the Nintendo 3DS. Originally created late June 2019.
+# Jackson's 3DS Title Manager
+*The authors of this program do not condone piracy. This program is intended to be used with legitimate copies of games and software.*
+
+A fork of [ihaveamac's custom-install](https://github.com/ihaveamac/custom-install) that allows users to download and install titles directly from [HShop](https://hshop.erista.me/) to their Nintendo 3DS system's SD card.
+
+It features the following improvements over the original `custom-install` program:
+- Allows users to search and download titles directly from HShop, including the automatic detection and download of Downloadable Content (DLC) and title updates.
+- The user can then, with one click, install these downloaded titles directly to their SD card, bypassing the need to use a program like FBI to install the CIA file.
+- Includes a feature allowing users to quickly download all available updates and DLC packs for all the games installed on their SD card, that are not already installed.
+
+### Feature roadmap
+- [x] Query, download, and install from HShop
+- [x] Auto-update all installed titles + install available DLC
+- [ ] Delete, move, edit titles on SD card
 
 ## Summary
+You're gonna need a copy of [seeddb.bin](https://github.com/ihaveamac/3DS-rom-tools/wiki/SeedDB-list), and your [boot9.bin and movable.sed files](https://ihaveamac.github.io/dump.html), regardless of installation method.
 
 ### Windows standalone
-
 1. [Dump boot9.bin and movable.sed](https://ihaveamac.github.io/dump.html) from a 3DS system.
 2. Download the [latest releases](https://github.com/ihaveamac/custom-install/releases).
 3. Extract and run ci-gui. Read `windows-quickstart.txt`.
@@ -88,6 +100,8 @@ Copy `custom-install-finalize.3dsx` to the project root, this will be copied to 
 Run `make-standalone.bat`. This will run cxfreeze and make a standalone version at `dist\custom-install-standalone.zip`
 
 ## License/Credits
+The original `custom-install`, which does most of the legwork for this program, is &copy; 2019-2021 Ian Burgwin under the MIT License.
+
 [save3ds by wwylele](https://github.com/wwylele/save3ds) is used to interact with the Title Database (details in `bin/README`).
 
 Thanks to @nek0bit for redesigning `custominstall.py` to work as a module, and for implementing an earlier GUI.
@@ -95,3 +109,5 @@ Thanks to @nek0bit for redesigning `custominstall.py` to work as a module, and f
 Thanks to @LyfeOnEdge from the [brewtools Discord](https://brewtools.dev) for designing the second version of the GUI. Special thanks to CrafterPika and archbox for testing.
 
 Thanks to @BpyH64 for [researching how to generate the cmacs](https://github.com/d0k3/GodMode9/issues/340#issuecomment-487916606).
+
+Remaining code and contributions &copy; 2024 Jackson Rakena under the MIT License.

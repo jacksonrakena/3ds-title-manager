@@ -27,6 +27,7 @@ from pyctr.util import config_dirs
 
 from custominstall import (CI_VERSION, CustomInstall, InstallStatus,
                            InvalidCIFinishError, load_cifinish)
+from scrape import find_candidate_linked_content, find_hshop_title
 
 if TYPE_CHECKING:
     from os import PathLike
@@ -571,8 +572,8 @@ class CustomInstallGUI(ttk.Frame):
                 text = requests.get(
                     target_item_url).text
                 bsoup = BeautifulSoup(text, 'html.parser')
-                download_url = bsoup.find_all(name='div', attrs={
-                    'class': 'ddl-section'})[0].find_all(name='a')[0].attrs['href']
+                download_url = bsoup.find_all(name='a', class_='btn')[
+                    0].attrs['href']
 
                 import random
                 self.pg_text.configure(text='Starting download for ' + item)
@@ -584,7 +585,10 @@ class CustomInstallGUI(ttk.Frame):
                 fname = params['filename']
                 print(fname)
                 lsz = 0
-                with open('downloads/' + fname, 'wb') as handle:
+                long_fname = 'downloads/' + fname
+                import os
+                os.makedirs(os.path.dirname(long_fname), exist_ok=True)
+                with open(long_fname, 'wb') as handle:
                     for data in file_resp.iter_content(chunk_size=8192):
                         lsz += len(data)
                         self.current_download_progress.configure(value=lsz)
@@ -624,6 +628,56 @@ class CustomInstallGUI(ttk.Frame):
         self.current_download_progress = ttk.Progressbar(
             search_frame, orient=tk.HORIZONTAL, mode='determinate')
         self.current_download_progress.grid(row=2, column=1, sticky=tk.NSEW)
+
+        existing_games_frame = ttk.Frame(self)
+        existing_games_frame.grid(row=7, column=0, sticky=tk.NSEW)
+
+        self.existing_game_tv = ttk.Treeview(existing_games_frame)
+        self.existing_game_tv.grid(row=1, column=0, sticky=tk.NSEW)
+        self.existing_game_tv.configure(
+            columns=('id', 'name', 'type'), show='headings')
+
+        def search_existing():
+            sd_root = self.file_picker_textboxes['sd'].get(
+                '1.0', tk.END).strip()
+            seeddb = self.file_picker_textboxes['seeddb'].get(
+                '1.0', tk.END).strip()
+            movable_sed = self.file_picker_textboxes['movable.sed'].get(
+                '1.0', tk.END).strip()
+            boot9 = self.file_picker_textboxes['boot9'].get(
+                '1.0', tk.END).strip()
+            from lib import get_existing_title_ids
+            t_ids = get_existing_title_ids(boot9, movable_sed, sd_root)
+            install_queue = []
+            for t_id in t_ids:
+                if t_id[7] in ['c', 'e']:
+                    print(f'Update/DLC for {t_id}')
+                    continue
+                hshop_title = find_hshop_title(t_id)
+                if hshop_title is None:
+                    continue
+                related_content = find_candidate_linked_content(
+                    hshop_title.hshop_id)
+                print(f'{hshop_title.name} ({hshop_title.title_id})')
+                for r in related_content:
+                    installed = r.related_item.title_id in t_ids
+                    if installed:
+                        print(
+                            f'- ✓ {r.relation_type} ({r.related_item.title_id}) installed')
+                    else:
+                        print(
+                            f'- ✗ {r.relation_type} ({r.related_item.title_id}) not installed')
+                        install_queue.append(r)
+            print('Queue to install:')
+            for q in install_queue:
+                print(f'- {q.relation_type} for {q.related_item.name} ({
+                      q.related_item.title_id}/{q.related_item.hshop_id})')
+                self.queue.insert('', tk.END, text=q.related_item.hshop_id, iid=q.related_item.hshop_id,
+                                  values=(q.related_item.hshop_id, q.related_item.name))
+        pass
+        load_all_btn = ttk.Button(
+            existing_games_frame, text='Search for existing games', command=search_existing)
+        load_all_btn.grid(row=0, column=0, sticky=tk.NSEW)
 
         # ---------------------------------------------------------------- #
         # create treeview
@@ -908,7 +962,8 @@ class CustomInstallGUI(ttk.Frame):
             total_size, free_space = installer.check_size()
             if total_size > free_space:
                 self.show_error(f'Not enough free space.\n'
-                                f'Combined title install size: {total_size / (1024 * 1024):0.2f} MiB\n'
+                                f'Combined title install size: {
+                                    total_size / (1024 * 1024):0.2f} MiB\n'
                                 f'Free space: {free_space / (1024 * 1024):0.2f} MiB')
                 self.enable_buttons()
                 return
