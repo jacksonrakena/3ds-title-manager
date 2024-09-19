@@ -7,8 +7,13 @@ A fork of [ihaveamac's custom-install](https://github.com/ihaveamac/custom-insta
 
 It features the following improvements over the original `custom-install` program:
 - Allows users to search and download titles directly from HShop, including the automatic detection and download of Downloadable Content (DLC) and title updates.
+![alt text](image-1.png)
+
 - The user can then, with one click, install these downloaded titles directly to their SD card, bypassing the need to use a program like FBI to install the CIA file.
+![alt text](image-2.png)
+
 - Includes a feature allowing users to quickly download all available updates and DLC packs for all the games installed on their SD card, that are not already installed.
+![alt text](image.png)
 
 ### Feature roadmap
 - [x] Query, download, and install from HShop

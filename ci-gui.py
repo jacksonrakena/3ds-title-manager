@@ -6,6 +6,7 @@
 # This file is licensed under The MIT License (MIT).
 # You can find the full license text in LICENSE.md in the root of this project.
 
+import asyncio
 import sys
 import tkinter as tk
 import tkinter.filedialog as fd
@@ -27,8 +28,8 @@ from pyctr.util import config_dirs
 
 from custominstall import (CI_VERSION, CustomInstall, InstallStatus,
                            InvalidCIFinishError, load_cifinish)
-from scrape import (_compile_meta_node, find_candidate_linked_content,
-                    find_hshop_title)
+from scrape import (Title, TitleRelation, _compile_meta_node,
+                    find_candidate_linked_content, find_hshop_title)
 from utils import disable_children, enable_children
 
 if TYPE_CHECKING:
@@ -397,20 +398,23 @@ class CustomInstallGUI(ttk.Frame):
             'movable.sed', [('movable.sed file', '*.sed')], default_movable_sed_path, 3)
 
         tab_control = ttk.Notebook(self)
-        tab_control.grid(row=2, column=0)
+        tab_control.grid(row=2, column=0, sticky=tk.NSEW)
 
         hshop_frame = ttk.Frame(tab_control)
         tab_control.add(hshop_frame, text='Browse and download from hShop')
 
         hshop_frame.rowconfigure(0, weight=1)
         hshop_frame.rowconfigure(1, weight=1)
+
         hshop_frame.columnconfigure(0, weight=1)
 
         search_frame = ttk.Labelframe(
-            hshop_frame, text='Search hShop')
-        search_frame.grid(row=0, column=0)
+            hshop_frame, text='Search hShop', padding='10')
+        search_frame.grid(row=0, column=0, sticky=tk.NSEW)
         search_frame.rowconfigure(0, weight=1)
         search_frame.columnconfigure(0, weight=1)
+        search_frame.rowconfigure(1, weight=1)
+        search_frame.rowconfigure(2, weight=1)
 
         def begin_search():
             import urllib
@@ -418,9 +422,12 @@ class CustomInstallGUI(ttk.Frame):
             import requests
             from bs4 import BeautifulSoup
             self.search.delete(*self.search.get_children())
-            query_page = requests.get(
-                f'https://hshop.erista.me/search/results?sd=descending&sb=downloads&q={urllib.parse.quote_plus(self.search_input.get())}&qt=Text&lgy=false')
+            query_url = f'https://hshop.erista.me/search/results?sd=descending&sb=downloads&q={
+                urllib.parse.quote_plus(self.search_input.get())}&qt=Text&lgy=false'
+            self.search_state.configure(text=f'Fetching {query_url}')
+            query_page = requests.get(query_url)
             soup = BeautifulSoup(query_page.text, 'html.parser')
+            count = 0
             for game in soup.find_all(name='a', attrs={
                     'class': 'list-entry block-link'}):
                 base_info = game.find(name='div', attrs={'class': 'base-info'})
@@ -445,14 +452,25 @@ class CustomInstallGUI(ttk.Frame):
                 meta_info = _compile_meta_node(game)
 
                 if meta_info.hshop_id is not None:
+                    count += 1
                     self.search.insert('', tk.END, iid=meta_info.hshop_id,
                                        values=(meta_info.title_id, game_title, meta_info.version, f'{category}/{region}', meta_info.size))
-            pass
+            self.search_state.configure(text=f'Loaded {count} results')
+        search_input_frame = ttk.Frame(search_frame)
+        search_input_frame.rowconfigure(0, weight=1)
+        search_input_frame.grid(row=1, column=0, sticky=tk.NSEW)
+
         search_start = ttk.Button(
-            search_frame, text='Search', command=begin_search)
-        search_start.grid(row=2, column=0)
-        self.search_input = ttk.Entry(search_frame)
-        self.search_input.grid(row=1, column=0)
+            search_input_frame, text='Search', command=lambda: Thread(target=begin_search).start())
+        search_start.grid(row=0, column=1, sticky=tk.NSEW)
+        self.search_input = ttk.Entry(search_input_frame)
+        self.search_input.grid(row=0, column=0, sticky=tk.NSEW)
+
+        search_status_frame = ttk.Frame(search_frame)
+        search_status_frame.rowconfigure(0, weight=1)
+        search_status_frame.grid(row=2, column=0, sticky=tk.NSEW)
+        self.search_state = ttk.Label(search_status_frame, text='Waiting')
+        self.search_state.grid(row=0, column=0, sticky=tk.NSEW)
 
         search_frame_scrollbar = ttk.Scrollbar(
             search_frame, orient=tk.VERTICAL)
@@ -483,27 +501,34 @@ class CustomInstallGUI(ttk.Frame):
             title_name = item[1]
             hshop_id = self.search.identify(
                 'item', event.x, event.y)
+            self.search_state.configure(text=f'Searching for additional content for {
+                title_id} {title_name}')
             additional_content = find_candidate_linked_content(
                 self.search.identify(
                     'item', event.x, event.y))
+            total_inserts = 1
             if len(additional_content) > 0:
                 answer = mb.askyesno('Additional content', f'Found the following additional content: {
                     str.join(',', map(lambda x: x.relation_type, additional_content))}. Install?')
                 if answer:
                     for a in additional_content:
-                        print(a.related_item.hshop_id)
+                        total_inserts += 1
                         self.queue.insert(
                             '', tk.END, iid=a.related_item.hshop_id, values=(a.related_item.title_id, f'{a.relation_type} for {title_name}'))
             self.queue.insert('', tk.END, text=hshop_id, iid=hshop_id,
                               values=(title_id, title_name))
-        self.search.bind('<Double-1>', on_search_item_clicked)
+            self.search_state.configure(
+                text=f'Added {total_inserts} titles to download queue')
+        self.search.bind(
+            '<Double-1>', lambda x: Thread(target=on_search_item_clicked, args=[x]).start())
 
-        queue_frame = ttk.Labelframe(hshop_frame, text='Download queue')
+        queue_frame = ttk.Labelframe(
+            hshop_frame, text='Download queue', padding='10')
         queue_frame.grid(row=1, column=0, sticky=tk.NSEW)
         queue_frame.rowconfigure(0, weight=1)
         queue_frame.columnconfigure(0, weight=1)
         self.queue = ttk.Treeview(queue_frame)
-        self.queue.grid(row=0, column=0)
+        self.queue.grid(row=0, column=0, sticky=tk.NSEW)
         self.queue.config(columns=('id', 'name'), show='headings')
         self.queue.column('id', width=200, anchor=tk.W)
         self.queue.heading('id', text='Title ID')
@@ -537,10 +562,22 @@ class CustomInstallGUI(ttk.Frame):
 
                 print(download_url)
 
-                from pypdl import Pypdl
+                import cgi
+
+                from pypdl.pypdl_manager import Pypdl
                 dl = Pypdl()
-                file = dl.start(file_path='downloads/',
-                                url=download_url, block=False, display=False)
+                # This awkward little hack is because pypdl doesn't properly
+                # handle hShop's non-standard Content-Disposition header.
+                # We call their function to get the headers, properly parse
+                # the filename, and then give that to Pypdl directly.
+                from email.message import Message
+                msg = Message()
+                header = asyncio.run(dl._get_header(download_url))
+
+                msg['content-disposition'] = header['Content-Disposition']
+                fname = 'downloads/' + msg.get_filename()
+                dl.start(file_path=fname,
+                         url=download_url, block=False, display=False, overwrite=False)
 
                 def sizeof_fmt(num, suffix="B"):
                     for unit in ("", "K", "M", "G", "T", "P", "E", "Z"):
@@ -550,27 +587,18 @@ class CustomInstallGUI(ttk.Frame):
                     return f"{num:.1f}Yi{suffix}"
 
                 while dl.wait:
+                    self.pg_text.configure(
+                        text=f'{item_struct[1]} ({item}): Waiting for headers')
                     pass
                 while not dl.completed:
                     self.pg_text.configure(text=f'{item_struct[1]} ({item}): {
                                            sizeof_fmt(dl.current_size)}/{sizeof_fmt(dl.size)} {dl.speed:3.2f}MB/s')
                     self.current_item_progress.configure(
                         maximum=dl.size, value=dl.current_size)
-
-                # from pySmartDL import SmartDL
-                # obj = SmartDL(download_url, progress_bar=False,
-                #               dest='downloads/')
-                # obj.start(blocking=False)
-                # while not obj.isFinished():
-                #     self.pg_text.configure(
-                #         text=f'{item_struct[1]} ({item}): {obj.get_dl_size(human=True)}/{obj.get_final_filesize(human=True)} {obj.get_speed(human=True)}')
-                #     self.current_download_progress.configure(
-                #         maximum=obj.get_final_filesize(), value=obj.get_dl_size())
-
-                # if obj.isSuccessful():
-                #     fnames.append(obj.get_dest())
-                #     completed += 1
-                #     self.download_item_progress.configure(value=completed)
+                if not dl.failed:
+                    fnames.append(fname)
+                    completed += 1
+                    self.queue_progress.configure(value=completed)
             self.pg_text.configure(
                 text='Completed ' + str(len(self.queue.get_children())) + ' downloads')
 
@@ -584,6 +612,7 @@ class CustomInstallGUI(ttk.Frame):
                 title_read_fail_window = TitleReadFailResults(
                     self.parent, failed=results)
                 title_read_fail_window.focus()
+            self.queue.delete(*self.queue.get_children())
             self.sort_treeview()
 
         def start_queue():
@@ -608,11 +637,18 @@ class CustomInstallGUI(ttk.Frame):
         install_frame = ttk.Frame(tab_control)
         tab_control.add(install_frame, text='Install titles and CIAs')
         # install_frame.grid(row=3, column=0, sticky=tk.NSEW)
-
+        install_frame.rowconfigure(0, weight=1)
+        install_frame.rowconfigure(1, weight=1)
+        install_frame.rowconfigure(2, weight=1)
+        install_frame.columnconfigure(0, weight=1)
         # ---------------------------------------------------------------- #
         # create buttons to add cias
         titlelist_buttons = ttk.Frame(install_frame)
         titlelist_buttons.grid(row=0, column=0, sticky=tk.NSEW)
+        titlelist_buttons.columnconfigure(0, weight=1)
+        titlelist_buttons.columnconfigure(1, weight=1)
+        titlelist_buttons.columnconfigure(2, weight=1)
+        titlelist_buttons.columnconfigure(3, weight=1)
 
         def add_cias_callback():
             files = fd.askopenfilenames(parent=parent, title='Select CIA files', filetypes=[('CIA files', '*.cia')],
@@ -631,7 +667,7 @@ class CustomInstallGUI(ttk.Frame):
 
         add_cias = ttk.Button(
             titlelist_buttons, text='Add CIAs', command=add_cias_callback)
-        add_cias.grid(row=0, column=0)
+        add_cias.grid(row=0, column=0, sticky=tk.NSEW)
 
         def add_cdn_callback():
             d = fd.askdirectory(parent=parent, title='Select folder containing title contents in CDN format',
@@ -650,7 +686,7 @@ class CustomInstallGUI(ttk.Frame):
 
         add_cdn = ttk.Button(
             titlelist_buttons, text='Add CDN title folder', command=add_cdn_callback)
-        add_cdn.grid(row=0, column=1)
+        add_cdn.grid(row=0, column=1, sticky=tk.NSEW)
 
         def add_dirs_callback():
             d = fd.askdirectory(
@@ -671,7 +707,7 @@ class CustomInstallGUI(ttk.Frame):
 
         add_dirs = ttk.Button(
             titlelist_buttons, text='Add folder', command=add_dirs_callback)
-        add_dirs.grid(row=0, column=2)
+        add_dirs.grid(row=0, column=2, sticky=tk.NSEW)
 
         def remove_selected_callback():
             for entry in self.treeview.selection():
@@ -679,12 +715,12 @@ class CustomInstallGUI(ttk.Frame):
 
         remove_selected = ttk.Button(
             titlelist_buttons, text='Remove selected', command=remove_selected_callback)
-        remove_selected.grid(row=0, column=3)
+        remove_selected.grid(row=0, column=3, sticky=tk.NSEW)
 
         treeview_frame = ttk.Frame(install_frame)
         treeview_frame.grid(row=1, column=0, sticky=tk.NSEW)
-        # treeview_frame.rowconfigure(0, weight=1)
-        # treeview_frame.columnconfigure(0, weight=1)
+        treeview_frame.rowconfigure(0, weight=1)
+        treeview_frame.columnconfigure(0, weight=1)
 
         treeview_scrollbar = ttk.Scrollbar(treeview_frame, orient=tk.VERTICAL)
         treeview_scrollbar.grid(row=0, column=1, sticky=tk.NSEW)
@@ -746,22 +782,22 @@ class CustomInstallGUI(ttk.Frame):
         self.existing_game_tv = ttk.Treeview(
             existing_games_frame)
         self.existing_game_tv.grid(row=2, column=0, sticky=tk.NSEW)
-        self.existing_game_tv.configure(
-            columns=('id', 'name', 'type', 'version', 'size'), show='tree')
-        self.existing_game_tv.column('id', width=150, anchor=tk.W)
-        self.existing_game_tv.heading('id', text='Title ID')
+        # self.existing_game_tv.configure(
+        #     columns=('id', 'name', 'type', 'version', 'size'), show='tree')
+        # self.existing_game_tv.column('id', width=150, anchor=tk.W)
+        # self.existing_game_tv.heading('id', text='Title ID')
 
-        self.existing_game_tv.column('name', width=300, anchor=tk.W)
-        self.existing_game_tv.heading('name', text='Title')
+        # self.existing_game_tv.column('name', width=300, anchor=tk.W)
+        # self.existing_game_tv.heading('name', text='Title')
 
-        self.existing_game_tv.column('type', width=150, anchor=tk.W)
-        self.existing_game_tv.heading('type', text='Type')
+        # self.existing_game_tv.column('type', width=150, anchor=tk.W)
+        # self.existing_game_tv.heading('type', text='Type')
 
-        self.existing_game_tv.column('version', width=100, anchor=tk.W)
-        self.existing_game_tv.heading('version', text='Version')
+        # self.existing_game_tv.column('version', width=100, anchor=tk.W)
+        # self.existing_game_tv.heading('version', text='Version')
 
-        self.existing_game_tv.column('size', width=100, anchor=tk.W)
-        self.existing_game_tv.heading('size', text='Size')
+        # self.existing_game_tv.column('size', width=100, anchor=tk.W)
+        # self.existing_game_tv.heading('size', text='Size')
 
         def search_existing():
             sd_root = self.file_picker_textboxes['sd'].get(
@@ -775,34 +811,42 @@ class CustomInstallGUI(ttk.Frame):
             self.update_search_text.configure(text='Reading title IDs')
             from lib import collect_existing_titles, get_existing_title_ids
             t_ids = get_existing_title_ids(boot9, movable_sed, sd_root)
-            for r in collect_existing_titles(boot9, movable_sed, sd_root):
-                print(f'{r.id} {r.title.long_desc}: DLC {
-                      r.dlc_installed}, Update {r.update_installed}')
-                # self.existing_game_tv.insert('', tk.END, iid=r.id, values=(
-                #     r.id, r.title.short_desc, 'Game', r.title.publisher, 'None'), open=True)
+            titles_searched = 0
+
+            install_queue = []
+            titles = collect_existing_titles(boot9, movable_sed, sd_root)
+            for r in titles:
+                self.update_search_progress.configure(
+                    value=titles_searched, maximum=len(t_ids)-1)
+                self.update_search_text.configure(
+                    text=f'{titles_searched+1}/{len(t_ids)}: checking updates and DLC for {r.title.short_desc}')
+                titles_searched += 1
                 self.existing_game_tv.insert('', tk.END, iid=r.id, text=f'{r.id} {
                                              r.title.short_desc} by {r.title.publisher}', open=True)
                 dlc_available = False
                 update_available = False
+                update: TitleRelation = None
+                dlc: TitleRelation = None
                 if not r.dlc_installed or not r.update_installed:
                     hshop_title = find_hshop_title(r.id)
                     if hshop_title is None:
                         continue
-                    self.update_search_text.configure(
-                        text=f'{hshop_title.name}')
                     related_content = find_candidate_linked_content(
                         hshop_title.hshop_id)
                     for rc in related_content:
                         if rc.relation_type == 'Downloadable Content':
                             dlc_available = True
+                            dlc = rc
                         elif rc.related_item == 'Update':
                             update_available = True
+                            update = rc
                 if r.dlc_installed or dlc_available:
                     text = None
                     if r.dlc_installed:
                         text = 'Installed'
                     else:
                         text = 'Available'
+                        install_queue.append(dlc)
                     self.existing_game_tv.insert(
                         r.id, tk.END, text=f'{text} DLC for {r.title.short_desc}')
                 if r.update_installed or update_available:
@@ -811,29 +855,10 @@ class CustomInstallGUI(ttk.Frame):
                         text = 'Installed'
                     else:
                         text = 'Available'
+                        install_queue.append(update)
                     self.existing_game_tv.insert(
                         r.id, tk.END, text=f'{text} update for {r.title.short_desc}')
-            self.update_search_progress.configure(
-                value=0, maximum=len(t_ids)-1)
-            install_queue = []
 
-            for i, t_id in enumerate(t_ids):
-                self.update_search_progress.configure(value=i)
-                if t_id[7].lower() in ['c', 'e']:
-                    continue
-                hshop_title = find_hshop_title(t_id)
-                if hshop_title is None:
-                    continue
-                self.update_search_text.configure(
-                    text=f'{(i+1)}/{len(t_ids)}: {hshop_title.name}')
-                related_content = find_candidate_linked_content(
-                    hshop_title.hshop_id)
-                for r in related_content:
-                    installed = r.related_item.title_id in t_ids
-                    if not installed:
-                        install_queue.append(r)
-                        self.existing_game_tv.insert('', tk.END, text=r.related_item.title_id, iid=r.related_item.title_id, values=(
-                            r.related_item.title_id, r.related_item.name, r.relation_type, r.related_item.version, r.related_item.size), open=True)
             print('Queue to install:')
             for q in install_queue:
                 print(f'- {q.relation_type} for {q.related_item.name} ({
@@ -847,11 +872,14 @@ class CustomInstallGUI(ttk.Frame):
 
         label_pair_frame = ttk.Frame(existing_games_frame)
         label_pair_frame.grid(row=1, column=0, sticky=tk.NSEW)
+        label_pair_frame.rowconfigure(0, weight=1)
+        label_pair_frame.columnconfigure(0, weight=1)
+        label_pair_frame.columnconfigure(1, weight=1)
 
         self.update_search_progress = ttk.Progressbar(
             label_pair_frame, orient=tk.HORIZONTAL, mode='determinate')
         self.update_search_progress.grid(
-            row=0, column=1, columnspan=3, sticky=tk.NSEW)
+            row=0, column=1, sticky=tk.NSEW)
 
         self.update_search_text = ttk.Label(
             label_pair_frame, text='Not searching')
