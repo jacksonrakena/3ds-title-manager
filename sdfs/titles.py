@@ -1,21 +1,14 @@
+
 import subprocess
 import sys
-from dataclasses import dataclass
-from os import environ, scandir
-from os.path import abspath, basename, dirname, isfile, join
-from pprint import pformat
+from os.path import dirname, isfile, join
 from sys import executable, platform
 from tempfile import TemporaryDirectory
-from typing import Literal
 
-from pyctr.crypto import CryptoEngine, Keyslot, get_seed, load_seeddb
-from pyctr.type.cdn import CDNError, CDNReader
-from pyctr.type.cia import CIAError, CIAReader
-from pyctr.type.ncch import NCCHSection
+from pyctr.crypto import CryptoEngine
 from pyctr.type.sd import SDFilesystem
-from pyctr.type.smdh import AppTitle
-from pyctr.type.tmd import TitleMetadataError
-from pyctr.util import roundup
+
+from sdfs.types import InstalledTitle
 
 frozen = getattr(sys, 'frozen', None)
 is_windows = sys.platform == 'win32'
@@ -42,31 +35,7 @@ def get_app_title(title_id: str, fs: SDFilesystem):
     return title.contents[0].exefs.icon.get_app_title()
 
 
-def get_sd_path(sd_path, crypto):
-    sd_path = join(sd_path, 'Nintendo 3DS', crypto.id0.hex())
-    id1s = []
-    for d in scandir(sd_path):
-        if d.is_dir() and len(d.name) == 32:
-            try:
-                # check if the name can be converted to hex
-                # I'm not sure what the 3DS does if there is a folder that is not a 32-char hex string.
-                bytes.fromhex(d.name)
-            except ValueError:
-                continue
-            else:
-                id1s.append(d.name)
-    return [sd_path, id1s]
-
-
-@dataclass
-class InstalledTitle():
-    id: str
-    title: AppTitle
-    update_installed: bool
-    dlc_installed: bool
-
-
-def collect_existing_titles(boot9, movable, root_sd_path):
+def collect_existing_titles(boot9: str, movable: str, root_sd_path: str):
     crypto = CryptoEngine(boot9=boot9)
     crypto.setup_sd_key_from_file(movable)
     d = SDFilesystem(join(root_sd_path, 'Nintendo 3DS'), crypto=crypto)

@@ -1,64 +1,8 @@
-from dataclasses import dataclass
-
 import requests
-from bs4 import BeautifulSoup, PageElement
+from bs4 import BeautifulSoup
 
-
-@dataclass
-class TitleMeta:
-    hshop_id: str
-    title_id: str
-    size: str
-    version: str
-    type: str
-    product_code: str
-
-
-@dataclass
-class Title(TitleMeta):
-    name: str
-
-
-@dataclass
-class TitleRelation:
-    base_item: Title
-    related_item: Title
-    relation_type: str
-    pass
-
-
-def _compile_meta_node(meta_node: PageElement):
-    hshop_id = None
-    title_id = None
-    size = None
-    version = None
-    title_type = None
-    prd_code = None
-
-    data_nodes = meta_node.find_all(
-        name='div', attrs={'class': 'meta-content'})
-
-    for node in data_nodes:
-        members = node.findChildren('span')
-        if len(members) < 2:
-            continue
-        name = members[-1].text
-        data = members[-2].text
-        if name == 'ID':
-            hshop_id = data
-        elif name == 'Title ID':
-            title_id = data
-        elif name == 'Size':
-            size = members[-3].text
-        elif name == 'Version':
-            version = data
-        elif name == 'ID':
-            hshop_id = data
-        elif name == 'Content Type':
-            title_type = data
-        elif name == 'Product Code':
-            prd_code = data
-    return TitleMeta(hshop_id, title_id, size, version, title_type, prd_code)
+from hshop.parse import _compile_meta_node
+from hshop.types import Title, TitleRelation
 
 
 def find_hshop_title(title_id: str):
@@ -127,12 +71,3 @@ def find_candidate_linked_content(hshop_id: str) -> list[TitleRelation]:
     related_content = find_all_linked_content(hshop_id)
     DESIRED_TYPES = ['Downloadable Content', 'Update Data']
     return [x for x in related_content if x.relation_type in DESIRED_TYPES]
-
-
-if __name__ == '__main__':
-    title = find_hshop_title('00040000000EDF00')
-    print(title)
-    related_content = find_candidate_linked_content(title.hshop_id)
-    for r in related_content:
-        print(f'{r.related_item.hshop_id}: {
-            r.relation_type}')

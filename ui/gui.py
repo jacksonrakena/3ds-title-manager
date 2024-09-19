@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # This file is a part of custom-install.py.
 #
 # custom-install is copyright (c) 2019-2020 Ian Burgwin
@@ -26,35 +24,19 @@ from pyctr.type.cia import CIAError
 from pyctr.type.tmd import TitleMetadataError
 from pyctr.util import config_dirs
 
-from custominstall import (CI_VERSION, CustomInstall, InstallStatus,
-                           InvalidCIFinishError, load_cifinish)
-from scrape import (Title, TitleRelation, _compile_meta_node,
-                    find_candidate_linked_content, find_hshop_title)
-from utils import disable_children, enable_children
+from hshop.data import find_candidate_linked_content, find_hshop_title
+from hshop.parse import _compile_meta_node
+from hshop.types import TitleRelation
+from installer.custominstall import (CustomInstall, InstallStatus,
+                                     InvalidCIFinishError, load_cifinish)
+from sdfs.titles import collect_existing_titles, get_existing_title_ids
+from utils import CI_VERSION
 
 if TYPE_CHECKING:
     from os import PathLike
     from typing import Dict, List, Union
 
 frozen = getattr(sys, 'frozen', None)
-is_windows = sys.platform == 'win32'
-taskbar = None
-if is_windows:
-    if frozen:
-        # attempt to fix loading tcl/tk when running from a path with non-latin characters
-        tkinter_path = dirname(tk.__file__)
-        tcl_path = join(tkinter_path, 'tcl8.6')
-        environ['TCL_LIBRARY'] = 'lib/tkinter/tcl8.6'
-    try:
-        import comtypes.client as cc
-
-        tbl = cc.GetModule('TaskbarLib.tlb')
-
-        taskbar = cc.CreateObject(
-            '{56FDF344-FD6D-11D0-958A-006097C9A090}', interface=tbl.ITaskbarList3)
-        taskbar.HrInit()
-    except (ModuleNotFoundError, UnicodeEncodeError, AttributeError):
-        pass
 
 file_parent = dirname(abspath(__file__))
 
@@ -289,18 +271,8 @@ class CustomInstallGUI(ttk.Frame):
 
         self.log_messages = []
 
-        self.hwnd = None  # will be set later
-
         self.rowconfigure(2, weight=1)
         self.columnconfigure(0, weight=1)
-
-        if taskbar:
-            # this is so progress can be shown in the taskbar
-            def setup_tab():
-                self.hwnd = int(parent.wm_frame(), 16)
-                taskbar.ActivateTab(self.hwnd)
-
-            self.after(100, setup_tab)
 
         title_label = ttk.Label(
             self, text="Jackson's 3DS Title Manager", font=('', 25), anchor='center')
@@ -564,10 +536,6 @@ class CustomInstallGUI(ttk.Frame):
                 self.pg_text.configure(
                     text=f'Requesting download for {item_struct[1]} ({item})')
 
-                print(download_url)
-
-                import cgi
-
                 from pypdl.pypdl_manager import Pypdl
                 dl = Pypdl()
                 # This awkward little hack is because pypdl doesn't properly
@@ -813,7 +781,6 @@ class CustomInstallGUI(ttk.Frame):
             boot9 = self.file_picker_textboxes['boot9'].get(
                 '1.0', tk.END).strip()
             self.update_search_text.configure(text='Reading title IDs')
-            from lib import collect_existing_titles, get_existing_title_ids
             t_ids = get_existing_title_ids(boot9, movable_sed, sd_root)
             titles_searched = 0
 
@@ -863,10 +830,7 @@ class CustomInstallGUI(ttk.Frame):
                     self.existing_game_tv.insert(
                         r.id, tk.END, text=f'{text} update for {r.title.short_desc}')
 
-            print('Queue to install:')
             for q in install_queue:
-                print(f'- {q.relation_type} for {q.related_item.name} ({
-                      q.related_item.title_id}/{q.related_item.hshop_id})')
                 self.queue.insert('', tk.END, text=q.related_item.hshop_id, iid=q.related_item.hshop_id,
                                   values=(q.related_item.hshop_id, q.related_item.name))
 
@@ -893,11 +857,7 @@ class CustomInstallGUI(ttk.Frame):
         self.status_label.grid(row=7, column=0, sticky=tk.NSEW)
 
         self.log(
-            f'custom-install {CI_VERSION} - https://github.com/ihaveamac/custom-install', status=False)
-
-        if is_windows and not taskbar:
-            self.log('Note: Could not load taskbar lib.')
-            self.log('Note: Progress will not be shown in the Windows taskbar.')
+            f'Jackson\'s 3DS Title Manager {CI_VERSION} - https://github.com/jacksonrakena/3ds-title-manager', status=False)
 
         self.log('Ready.')
 
@@ -1048,9 +1008,6 @@ class CustomInstallGUI(ttk.Frame):
             self.update_status(path, InstallStatus.Waiting)
         self.disable_buttons()
 
-        if taskbar:
-            taskbar.SetProgressState(self.hwnd, tbl.TBPF_NORMAL)
-
         installer = CustomInstall(movable=movable_sed,
                                   sd=sd_root,
                                   skip_contents=self.skip_contents_var.get() == 1,
@@ -1084,13 +1041,8 @@ class CustomInstallGUI(ttk.Frame):
 
         def ci_update_percentage(total_percent, total_read, size):
             self.progressbar.config(value=total_percent + finished_percent)
-            if taskbar:
-                taskbar.SetProgressValue(self.hwnd, int(
-                    total_percent + finished_percent), max_percentage)
 
         def ci_on_error(exc):
-            if taskbar:
-                taskbar.SetProgressState(self.hwnd, tbl.TBPF_ERROR)
             for line in format_exception(*exc):
                 for line2 in line.split('\n')[:-1]:
                     installer.log(line2)
@@ -1100,9 +1052,6 @@ class CustomInstallGUI(ttk.Frame):
         def ci_on_cia_start(idx):
             nonlocal finished_percent
             finished_percent = idx * 100
-            if taskbar:
-                taskbar.SetProgressValue(
-                    self.hwnd, finished_percent, max_percentage)
 
         installer.event.on_log_msg += ci_on_log_msg
         installer.event.update_percentage += ci_update_percentage
@@ -1139,10 +1088,3 @@ class CustomInstallGUI(ttk.Frame):
                 self.enable_buttons()
 
         Thread(target=install).start()
-
-
-window = tk.Tk()
-window.title(f'Jackson\'s 3DS Title Manager {CI_VERSION}')
-frame = CustomInstallGUI(window)
-frame.pack(fill=tk.BOTH, expand=True)
-window.mainloop()

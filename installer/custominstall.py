@@ -1,40 +1,39 @@
-#!/usr/bin/env python3
-
 # This file is a part of custom-install.py.
 #
 # custom-install is copyright (c) 2019-2020 Ian Burgwin
 # This file is licensed under The MIT License (MIT).
 # You can find the full license text in LICENSE.md in the root of this project.
 
+import gzip
+import subprocess
+import sys
 from argparse import ArgumentParser
 from enum import Enum
 from glob import glob
-import gzip
-from os import makedirs, rename, scandir
-from os.path import dirname, join, isdir, isfile
-from random import randint
 from hashlib import sha256
+from os import makedirs, rename, scandir
+from os.path import dirname, isdir, isfile, join
 from pprint import pformat
-from shutil import copyfile, copy2, rmtree
-import sys
-from sys import platform, executable
+from random import randint
+from shutil import copy2, copyfile, rmtree
+from sys import executable, platform
 from tempfile import TemporaryDirectory
 from traceback import format_exception
-from typing import BinaryIO, TYPE_CHECKING
-import subprocess
+from typing import TYPE_CHECKING, BinaryIO
 
 if TYPE_CHECKING:
     from os import PathLike
     from typing import List, Union, Tuple
 
 from events import Events
-
-from pyctr.crypto import CryptoEngine, Keyslot, load_seeddb, get_seed
-from pyctr.type.cdn import CDNReader, CDNError
-from pyctr.type.cia import CIAReader, CIAError
+from pyctr.crypto import CryptoEngine, Keyslot, get_seed, load_seeddb
+from pyctr.type.cdn import CDNError, CDNReader
+from pyctr.type.cia import CIAError, CIAReader
 from pyctr.type.ncch import NCCHSection
 from pyctr.type.tmd import TitleMetadataError
 from pyctr.util import roundup
+
+from utils import CI_VERSION
 
 if platform == 'msys':
     platform = 'win32'
@@ -42,11 +41,10 @@ if platform == 'msys':
 is_windows = platform == 'win32'
 
 if is_windows:
-    from ctypes import c_wchar_p, pointer, c_ulonglong, windll
+    from ctypes import c_ulonglong, c_wchar_p, pointer, windll
 else:
     from os import statvfs
 
-CI_VERSION = '2.1'
 
 # used to run the save3ds_fuse binary next to the script
 frozen = getattr(sys, 'frozen', False)
@@ -95,7 +93,8 @@ def get_free_space(path: 'Union[PathLike, bytes, str]'):
         lpTotalNumberOfClusters = c_ulonglong(0)
         ret = windll.kernel32.GetDiskFreeSpaceW(c_wchar_p(path), pointer(lpSectorsPerCluster),
                                                 pointer(lpBytesPerSector),
-                                                pointer(lpNumberOfFreeClusters),
+                                                pointer(
+                                                    lpNumberOfFreeClusters),
                                                 pointer(lpTotalNumberOfClusters))
         if not ret:
             raise WindowsError
@@ -121,7 +120,8 @@ def load_cifinish(path: 'Union[PathLike, bytes, str]'):
                     # ignoring the titlekey and common key index, since it's not useful in this scenario
                     raw_entry = f.read(0x30)
                     if len(raw_entry) != 0x30:
-                        raise InvalidCIFinishError(f'title entry is not 0x30 (version {version})')
+                        raise InvalidCIFinishError(
+                            f'title entry is not 0x30 (version {version})')
 
                     title_magic = raw_entry[0xA:0x10]
                     title_id = int.from_bytes(raw_entry[0:8], 'little')
@@ -133,7 +133,8 @@ def load_cifinish(path: 'Union[PathLike, bytes, str]'):
                     # there wasn't a version of custom-install-finalize that really accepted this version
                     raw_entry = f.read(0x20)
                     if len(raw_entry) != 0x20:
-                        raise InvalidCIFinishError(f'title entry is not 0x20 (version {version})')
+                        raise InvalidCIFinishError(
+                            f'title entry is not 0x20 (version {version})')
 
                     title_magic = raw_entry[0:6]
                     title_id = int.from_bytes(raw_entry[0x6:0xE], 'little')
@@ -143,7 +144,8 @@ def load_cifinish(path: 'Union[PathLike, bytes, str]'):
                 elif version == 3:
                     raw_entry = f.read(0x20)
                     if len(raw_entry) != 0x20:
-                        raise InvalidCIFinishError(f'title entry is not 0x20 (version {version})')
+                        raise InvalidCIFinishError(
+                            f'title entry is not 0x20 (version {version})')
 
                     title_magic = raw_entry[0:6]
                     title_id = int.from_bytes(raw_entry[0x8:0x10], 'little')
@@ -212,7 +214,8 @@ class CustomInstall:
         self.crypto = CryptoEngine(boot9=boot9)
         self.crypto.setup_sd_key_from_file(movable)
         self.seeddb = seeddb
-        self.readers: 'List[Tuple[Union[CDNReader, CIAReader], Union[PathLike, bytes, str]]]' = []
+        self.readers: 'List[Tuple[Union[CDNReader, CIAReader], Union[PathLike, bytes, str]]]' = [
+        ]
         self.sd = sd
         self.skip_contents = skip_contents
         self.overwrite_saves = overwrite_saves
@@ -221,7 +224,8 @@ class CustomInstall:
 
     def copy_with_progress(self, src: BinaryIO, dst: BinaryIO, size: int, path: str, fire_event: bool = True):
         left = size
-        cipher = self.crypto.create_ctr_cipher(Keyslot.SD, self.crypto.sd_path_to_iv(path))
+        cipher = self.crypto.create_ctr_cipher(
+            Keyslot.SD, self.crypto.sd_path_to_iv(path))
         hasher = sha256()
         while left > 0:
             to_read = min(READ_SIZE, left)
@@ -231,7 +235,8 @@ class CustomInstall:
             left -= to_read
             total_read = size - left
             if fire_event:
-                self.event.update_percentage((total_read / size) * 100, total_read / 1048576, size / 1048576)
+                self.event.update_percentage(
+                    (total_read / size) * 100, total_read / 1048576, size / 1048576)
 
         return hasher.digest()
 
@@ -260,10 +265,12 @@ class CustomInstall:
             try:
                 reader = self.get_reader(path)
             except (CIAError, CDNError, TitleMetadataError):
-                self.log(f"Couldn't read {path}, likely corrupt or not a CIA or CDN title")
+                self.log(f"Couldn't read {
+                         path}, likely corrupt or not a CIA or CDN title")
                 continue
             if reader.tmd.title_id.startswith('00048'):  # DSiWare
-                self.log(f'Skipping {reader.tmd.title_id} - DSiWare is not supported')
+                self.log(
+                    f'Skipping {reader.tmd.title_id} - DSiWare is not supported')
                 continue
             readers.append((reader, path))
         self.readers = readers
@@ -284,7 +291,8 @@ class CustomInstall:
         if frozen:
             save3ds_fuse_path = join(script_dir, 'bin', 'save3ds_fuse')
         else:
-            save3ds_fuse_path = join(script_dir, 'bin', platform, 'save3ds_fuse')
+            save3ds_fuse_path = join(
+                script_dir, 'bin', platform, 'save3ds_fuse')
         if is_windows:
             save3ds_fuse_path += '.exe'
         if not isfile(save3ds_fuse_path):
@@ -299,7 +307,8 @@ class CustomInstall:
             raise SDPathError(f'There are multiple id1 directories for id0 {crypto.id0.hex()}, '
                               f'please remove extra directories')
         elif len(id1s) == 0:
-            raise SDPathError(f'Could not find a suitable id1 directory for id0 {crypto.id0.hex()}')
+            raise SDPathError(f'Could not find a suitable id1 directory for id0 {
+                              crypto.id0.hex()}')
         id1 = id1s[0]
         sd_path = join(sd_path, id1)
 
@@ -332,7 +341,8 @@ class CustomInstall:
                     e.write(tdb)
 
                     cmac = crypto.create_cmac_object(Keyslot.CMACSDNAND)
-                    cmac_data = [b'CTR-9DB0', 0x2.to_bytes(4, 'little'), tdb[0x100:0x200]]
+                    cmac_data = [b'CTR-9DB0',
+                                 0x2.to_bytes(4, 'little'), tdb[0x100:0x200]]
                     cmac.update(sha256(b''.join(cmac_data)).digest())
 
                     e.seek(0)
@@ -344,7 +354,8 @@ class CustomInstall:
                     e.write(tdb)
 
                     cmac = crypto.create_cmac_object(Keyslot.CMACSDNAND)
-                    cmac_data = [b'CTR-9DB0', 0x3.to_bytes(4, 'little'), tdb[0x100:0x200]]
+                    cmac_data = [b'CTR-9DB0',
+                                 0x3.to_bytes(4, 'little'), tdb[0x100:0x200]]
                     cmac.update(sha256(b''.join(cmac_data)).digest())
 
                     e.seek(0)
@@ -392,13 +403,15 @@ class CustomInstall:
                 self.event.on_cia_start(idx)
                 self.event.update_status(path, InstallStatus.Starting)
 
-                temp_title_root = join(self.sd, f'ci-install-temp-{cia.tmd.title_id}-{randint(0, 0xFFFFFFFF):08x}')
+                temp_title_root = join(
+                    self.sd, f'ci-install-temp-{cia.tmd.title_id}-{randint(0, 0xFFFFFFFF):08x}')
                 makedirs(temp_title_root, exist_ok=True)
 
                 tid_parts = (cia.tmd.title_id[0:8], cia.tmd.title_id[8:16])
 
                 try:
-                    display_title = f'{cia.contents[0].exefs.icon.get_app_title().short_desc} - {cia.tmd.title_id}'
+                    display_title = f'{
+                        cia.contents[0].exefs.icon.get_app_title().short_desc} - {cia.tmd.title_id}'
                 except:
                     display_title = cia.tmd.title_id
                 self.log(f'Installing {display_title}...')
@@ -444,7 +457,8 @@ class CustomInstall:
                     if is_dlc:
                         # create the separate directories for every 256 contents
                         for x in range(((len(cia.content_info) - 1) // 256) + 1):
-                            makedirs(join(temp_content_root, f'{x:08x}'), exist_ok=True)
+                            makedirs(join(temp_content_root, f'{
+                                     x:08x}'), exist_ok=True)
 
                     # maybe this will be changed in the future
                     tmd_id = 0
@@ -465,20 +479,27 @@ class CustomInstall:
                         content_filename = co.id + '.app'
                         if is_dlc:
                             dir_index = format((co.cindex // 256), '08x')
-                            content_enc_path = content_root_cmd + f'/{dir_index}/{content_filename}'
-                            content_out_path = join(temp_content_root, dir_index, content_filename)
+                            content_enc_path = content_root_cmd + \
+                                f'/{dir_index}/{content_filename}'
+                            content_out_path = join(
+                                temp_content_root, dir_index, content_filename)
                         else:
                             content_enc_path = content_root_cmd + '/' + content_filename
-                            content_out_path = join(temp_content_root, content_filename)
+                            content_out_path = join(
+                                temp_content_root, content_filename)
                         self.log(f'Writing {content_enc_path}...')
                         with cia.open_raw_section(co.cindex) as s, open(content_out_path, 'wb') as o:
-                            result_hash = self.copy_with_progress(s, o, co.size, content_enc_path)
+                            result_hash = self.copy_with_progress(
+                                s, o, co.size, content_enc_path)
                             if result_hash != co.hash:
-                                self.log(f'WARNING: Hash does not match for {content_enc_path}!')
+                                self.log(f'WARNING: Hash does not match for {
+                                         content_enc_path}!')
                                 install_state['failed'].append(display_title)
-                                rename(temp_title_root, temp_title_root + '-corrupted')
+                                rename(temp_title_root,
+                                       temp_title_root + '-corrupted')
                                 do_continue = True
-                                self.event.update_status(path, InstallStatus.Failed)
+                                self.event.update_status(
+                                    path, InstallStatus.Failed)
                                 break
 
                     if do_continue:
@@ -487,18 +508,22 @@ class CustomInstall:
                     # generate a blank save
                     if cia.tmd.save_size:
                         sav_enc_path = title_root_cmd + '/data/00000001.sav'
-                        tmp_sav_out_path = join(temp_title_root, 'data', '00000001.sav')
+                        tmp_sav_out_path = join(
+                            temp_title_root, 'data', '00000001.sav')
                         sav_out_path = join(title_root, 'data', '00000001.sav')
                         if self.overwrite_saves or not isfile(sav_out_path):
-                            cipher = crypto.create_ctr_cipher(Keyslot.SD, crypto.sd_path_to_iv(sav_enc_path))
+                            cipher = crypto.create_ctr_cipher(
+                                Keyslot.SD, crypto.sd_path_to_iv(sav_enc_path))
                             # in a new save, the first 0x20 are all 00s. the rest can be random
                             data = cipher.encrypt(b'\0' * 0x20)
-                            self.log(f'Generating blank save at {sav_enc_path}...')
+                            self.log(f'Generating blank save at {
+                                     sav_enc_path}...')
                             with open(tmp_sav_out_path, 'wb') as o:
                                 o.write(data)
                                 o.write(b'\0' * (cia.tmd.save_size - 0x20))
                         else:
-                            self.log(f'Copying original save file from {sav_enc_path}...')
+                            self.log(f'Copying original save file from {
+                                     sav_enc_path}...')
                             copy2(sav_out_path, tmp_sav_out_path)
 
                     # generate and write cmd
@@ -515,11 +540,14 @@ class CustomInstall:
                             cmac_data = s.read(0x100)
 
                         id_bytes = bytes.fromhex(record.id)[::-1]
-                        cmac_data += record.cindex.to_bytes(4, 'little') + id_bytes
+                        cmac_data += record.cindex.to_bytes(
+                            4, 'little') + id_bytes
 
-                        cmac_ncch = crypto.create_cmac_object(Keyslot.CMACSDNAND)
+                        cmac_ncch = crypto.create_cmac_object(
+                            Keyslot.CMACSDNAND)
                         cmac_ncch.update(sha256(cmac_data).digest())
-                        content_ids[record.cindex] = (id_bytes, cmac_ncch.digest())
+                        content_ids[record.cindex] = (
+                            id_bytes, cmac_ncch.digest())
 
                     # add content IDs up to the last one
                     ids_by_index = [CMD_MISSING] * (highest_index + 1)
@@ -532,18 +560,21 @@ class CustomInstall:
                             # "MISSING CONTENT!"
                             # The 3DS does generate a cmac for missing contents, but I don't know how it works.
                             # It doesn't matter anyway, the title seems to be fully functional.
-                            cmacs.append(bytes.fromhex('4D495353494E4720434F4E54454E5421'))
+                            cmacs.append(bytes.fromhex(
+                                '4D495353494E4720434F4E54454E5421'))
                         else:
                             ids_by_index[x] = info[0]
                             cmacs.append(info[1])
                             installed_ids.append(info[0])
-                    installed_ids.sort(key=lambda x: int.from_bytes(x, 'little'))
+                    installed_ids.sort(
+                        key=lambda x: int.from_bytes(x, 'little'))
 
                     final = (cmd_id.to_bytes(4, 'little')
                              + len(ids_by_index).to_bytes(4, 'little')
                              + len(installed_ids).to_bytes(4, 'little')
                              + (1).to_bytes(4, 'little'))
-                    cmac_cmd_header = crypto.create_cmac_object(Keyslot.CMACSDNAND)
+                    cmac_cmd_header = crypto.create_cmac_object(
+                        Keyslot.CMACSDNAND)
                     cmac_cmd_header.update(final)
                     final += cmac_cmd_header.digest()
 
@@ -551,7 +582,8 @@ class CustomInstall:
                     final += b''.join(installed_ids)
                     final += b''.join(cmacs)
 
-                    cipher = crypto.create_ctr_cipher(Keyslot.SD, crypto.sd_path_to_iv(cmd_enc_path))
+                    cipher = crypto.create_ctr_cipher(
+                        Keyslot.SD, crypto.sd_path_to_iv(cmd_enc_path))
                     self.log(f'Writing {cmd_enc_path}')
                     with open(cmd_out_path, 'wb') as o:
                         o.write(cipher.encrypt(final))
@@ -581,7 +613,8 @@ class CustomInstall:
                     # flags_2, only using a common value
                     0x100000000.to_bytes(8, 'little'),
                     # product code
-                    cia.contents[0].product_code.encode('ascii').ljust(0x10, b'\0'),
+                    cia.contents[0].product_code.encode(
+                        'ascii').ljust(0x10, b'\0'),
                     # reserved
                     b'\0' * 0x10,
                     # unknown
@@ -598,7 +631,8 @@ class CustomInstall:
                 makedirs(tidhigh_root, exist_ok=True)
                 rename(temp_title_root, title_root)
 
-                cifinish_data[int(cia.tmd.title_id, 16)] = {'seed': (get_seed(cia.contents[0].program_id) if cia.contents[0].flags.uses_seed else None)}
+                cifinish_data[int(cia.tmd.title_id, 16)] = {'seed': (get_seed(
+                    cia.contents[0].program_id) if cia.contents[0].flags.uses_seed else None)}
 
                 # This is saved regardless if any titles were installed, so the file can be upgraded just in case.
                 save_cifinish(cifinish_path, cifinish_data)
@@ -630,14 +664,19 @@ class CustomInstall:
             application_count = len(glob(join(tempdir, '00040000*')))
             if install_state['installed']:
                 if application_count >= 300:
-                    self.log(f'{application_count} installed applications were detected.', 1)
+                    self.log(
+                        f'{application_count} installed applications were detected.', 1)
                     self.log('The HOME Menu will only show 300 icons.', 1)
-                    self.log('Some applications (not updates or DLC) will need to be deleted.', 1)
-                finalize_3dsx_orig_path = join(script_dir, 'custom-install-finalize.3dsx')
+                    self.log(
+                        'Some applications (not updates or DLC) will need to be deleted.', 1)
+                finalize_3dsx_orig_path = join(
+                    script_dir, 'custom-install-finalize.3dsx')
                 hb_dir = join(self.sd, '3ds')
-                finalize_3dsx_path = join(hb_dir, 'custom-install-finalize.3dsx')
+                finalize_3dsx_path = join(
+                    hb_dir, 'custom-install-finalize.3dsx')
                 if isfile(finalize_3dsx_orig_path):
-                    self.log('Copying finalize program to ' + finalize_3dsx_path)
+                    self.log('Copying finalize program to ' +
+                             finalize_3dsx_path)
                     makedirs(hb_dir, exist_ok=True)
                     copyfile(finalize_3dsx_orig_path, finalize_3dsx_path)
                     copied = True
@@ -646,7 +685,8 @@ class CustomInstall:
                 self.log('Run custom-install-finalize through homebrew launcher.')
                 self.log('This will install a ticket and seed if required.')
                 if copied:
-                    self.log('custom-install-finalize has been copied to the SD card.')
+                    self.log(
+                        'custom-install-finalize has been copied to the SD card.')
 
             return install_state, copied, application_count
 
@@ -693,17 +733,23 @@ class CustomInstall:
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser(description='Install a CIA to the SD card for a Nintendo 3DS system.')
+    parser = ArgumentParser(
+        description='Install a CIA to the SD card for a Nintendo 3DS system.')
     parser.add_argument('cia', help='CIA files', nargs='+')
-    parser.add_argument('-m', '--movable', help='movable.sed file', required=True)
+    parser.add_argument('-m', '--movable',
+                        help='movable.sed file', required=True)
     parser.add_argument('-b', '--boot9', help='boot9 file')
     parser.add_argument('-s', '--seeddb', help='seeddb file')
     parser.add_argument('--sd', help='path to SD root', required=True)
-    parser.add_argument('--skip-contents', help="don't add contents, only add title info entry", action='store_true')
-    parser.add_argument('--overwrite-saves', help='overwrite existing save files', action='store_true')
-    parser.add_argument('--cifinish-out', help='path for cifinish.bin file, defaults to (SD root)/cifinish.bin')
+    parser.add_argument(
+        '--skip-contents', help="don't add contents, only add title info entry", action='store_true')
+    parser.add_argument(
+        '--overwrite-saves', help='overwrite existing save files', action='store_true')
+    parser.add_argument(
+        '--cifinish-out', help='path for cifinish.bin file, defaults to (SD root)/cifinish.bin')
 
-    print(f'custom-install {CI_VERSION} - https://github.com/ihaveamac/custom-install')
+    print(
+        f'custom-install {CI_VERSION} - https://github.com/ihaveamac/custom-install')
     args = parser.parse_args()
 
     installer = CustomInstall(boot9=args.boot9,
@@ -716,9 +762,10 @@ if __name__ == "__main__":
 
     def log_handle(msg, end='\n'):
         print(msg, end=end)
-    
+
     def percent_handle(total_percent, total_read, size):
-        installer.log(f' {total_percent:>5.1f}%  {total_read:>.1f} MiB / {size:.1f} MiB\r', end='')
+        installer.log(f' {total_percent:>5.1f}%  {
+                      total_read:>.1f} MiB / {size:.1f} MiB\r', end='')
 
     def error(exc):
         for line in format_exception(*exc):
@@ -739,14 +786,16 @@ if __name__ == "__main__":
         total_size, free_space = installer.check_size()
         if total_size > free_space:
             installer.event.on_log_msg(f'Not enough free space.\n'
-                                       f'Combined title install size: {total_size / (1024 * 1024):0.2f} MiB\n'
+                                       f'Combined title install size: {
+                                           total_size / (1024 * 1024):0.2f} MiB\n'
                                        f'Free space: {free_space / (1024 * 1024):0.2f} MiB')
             sys.exit(1)
 
     result, copied_3dsx, application_count = installer.start()
     if result is False:
         # save3ds_fuse failed
-        installer.log('NOTE: Once save3ds_fuse is fixed, run the same command again with --skip-contents')
+        installer.log(
+            'NOTE: Once save3ds_fuse is fixed, run the same command again with --skip-contents')
     if application_count >= 300:
         installer.log(f'\n\nWarning: {application_count} installed applications were detected.\n'
                       f'The HOME Menu will only show 300 icons.\n'

@@ -1,5 +1,7 @@
 import tkinter
 
+CI_VERSION = '3.0'
+
 
 def disable_children(parent: tkinter.Frame):
     for child in parent.winfo_children():

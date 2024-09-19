@@ -1,19 +1,19 @@
 import sys
-from cx_Freeze import setup, Executable
+
+from cx_Freeze import Executable, setup
 
 if sys.platform == 'win32':
     executables = [
-        Executable('ci-gui.py', target_name='ci-gui-console'),
-        Executable('ci-gui.py', target_name='ci-gui', base='Win32GUI'),
+        Executable('main.py', target_name='titlemanager', base='Win32GUI'),
     ]
 else:
     executables = [
-        Executable('ci-gui.py', target_name='ci-gui'),
+        Executable('main.py', target_name='titlemanager'),
     ]
 
 setup(
-    name = "ci-gui",
-    version = "2.1b4",
-    description = "Installs a title directly to an SD card for the Nintendo 3DS",
-    executables = executables
+    name="Jacksons3DSTitleManager",
+    version="3.0",
+    description="Easily download, update, and manage games on your 3DS SD card",
+    executables=executables
 )
