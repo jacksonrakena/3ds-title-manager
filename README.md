@@ -2,6 +2,7 @@
 
 # Jackson's 3DS Title Manager
 *The authors of this program do not condone piracy. This program is intended to be used with legitimate copies of games and software.*
+![alt text](image-3.png)
 
 A fork of [ihaveamac's custom-install](https://github.com/ihaveamac/custom-install) that allows users to download and install titles directly from [HShop](https://hshop.erista.me/) to their Nintendo 3DS system's SD card.
 
