@@ -1,4 +1,5 @@
 
+import os
 import subprocess
 import sys
 from os.path import dirname, isfile, join
@@ -16,7 +17,7 @@ script_dir: str
 if frozen:
     script_dir = dirname(executable)
 else:
-    script_dir = dirname(__file__)
+    script_dir = os.getcwd()
 if platform == 'msys':
     platform = 'win32'
 

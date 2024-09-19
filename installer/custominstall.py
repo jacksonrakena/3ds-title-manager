@@ -8,7 +8,6 @@ import gzip
 import subprocess
 import sys
 from argparse import ArgumentParser
-from enum import Enum
 from glob import glob
 from hashlib import sha256
 from os import makedirs, rename, scandir
@@ -20,6 +19,8 @@ from sys import executable, platform
 from tempfile import TemporaryDirectory
 from traceback import format_exception
 from typing import TYPE_CHECKING, BinaryIO
+
+from utils import InstallStatus
 
 if TYPE_CHECKING:
     from os import PathLike
@@ -74,15 +75,6 @@ class SDPathError(Exception):
 
 class InvalidCIFinishError(Exception):
     pass
-
-
-class InstallStatus(Enum):
-    Waiting = 0
-    Starting = 1
-    Writing = 2
-    Finishing = 3
-    Done = 4
-    Failed = 5
 
 
 def get_free_space(path: 'Union[PathLike, bytes, str]'):

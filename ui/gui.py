@@ -5,6 +5,7 @@
 # You can find the full license text in LICENSE.md in the root of this project.
 
 import asyncio
+import os
 import sys
 import tkinter as tk
 import tkinter.filedialog as fd
@@ -27,18 +28,23 @@ from pyctr.util import config_dirs
 from hshop.data import find_candidate_linked_content, find_hshop_title
 from hshop.parse import _compile_meta_node
 from hshop.types import TitleRelation
-from installer.custominstall import (CustomInstall, InstallStatus,
-                                     InvalidCIFinishError, load_cifinish)
+from installer.custominstall import (CustomInstall, InvalidCIFinishError,
+                                     load_cifinish)
 from sdfs.titles import collect_existing_titles, get_existing_title_ids
-from utils import CI_VERSION
+from ui.frames.ConsoleFrame import ConsoleFrame
+from ui.frames.InstallResults import InstallResults
+from ui.frames.TitleReadFailResults import TitleReadFailResults
+from ui.tabs.updater import UpdaterFrame
+from ui.utils import find_first_file, statuses
+from utils import CI_VERSION, InstallStatus
 
 if TYPE_CHECKING:
     from os import PathLike
-    from typing import Dict, List, Union
+    from typing import Union
 
 frozen = getattr(sys, 'frozen', None)
 
-file_parent = dirname(abspath(__file__))
+file_parent = os.getcwd()
 
 # automatically load boot9 if it's in the current directory
 b9_paths.insert(0, join(file_parent, 'boot9.bin'))
@@ -53,16 +59,6 @@ except KeyError:
 seeddb_paths.insert(0, join(file_parent, 'seeddb.bin'))
 
 
-def clamp(n, smallest, largest):
-    return max(smallest, min(n, largest))
-
-
-def find_first_file(paths):
-    for p in paths:
-        if isfile(p):
-            return p
-
-
 # find boot9, seeddb, and movable.sed to auto-select in the gui
 default_b9_path = find_first_file(b9_paths)
 default_seeddb_path = find_first_file(seeddb_paths)
@@ -71,192 +67,8 @@ default_movable_sed_path = find_first_file([join(file_parent, 'movable.sed')])
 if default_seeddb_path:
     load_seeddb(default_seeddb_path)
 
-statuses = {
-    InstallStatus.Waiting: 'Waiting',
-    InstallStatus.Starting: 'Starting',
-    InstallStatus.Writing: 'Writing',
-    InstallStatus.Finishing: 'Finishing',
-    InstallStatus.Done: 'Done',
-    InstallStatus.Failed: 'Failed',
-}
 
-
-class ConsoleFrame(ttk.Frame):
-    def __init__(self, parent: tk.BaseWidget = None, starting_lines: 'List[str]' = None):
-        super().__init__(parent)
-        self.parent = parent
-
-        self.rowconfigure(0, weight=1)
-        self.columnconfigure(0, weight=1)
-
-        scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL)
-        scrollbar.grid(row=0, column=1, sticky=tk.NSEW)
-
-        self.text = tk.Text(self, highlightthickness=0,
-                            wrap='word', yscrollcommand=scrollbar.set)
-        self.text.grid(row=0, column=0, sticky=tk.NSEW)
-
-        scrollbar.config(command=self.text.yview)
-
-        if starting_lines:
-            for l in starting_lines:
-                self.text.insert(tk.END, l + '\n')
-
-        self.text.see(tk.END)
-        self.text.configure(state=tk.DISABLED)
-
-    def log(self, *message, end='\n', sep=' '):
-        self.text.configure(state=tk.NORMAL)
-        self.text.insert(tk.END, sep.join(message) + end)
-        self.text.see(tk.END)
-        self.text.configure(state=tk.DISABLED)
-
-
-def simple_listbox_frame(parent, title: 'str', items: 'List[str]'):
-    frame = ttk.LabelFrame(parent, text=title)
-    frame.rowconfigure(0, weight=1)
-    frame.columnconfigure(0, weight=1)
-
-    scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL)
-    scrollbar.grid(row=0, column=1, sticky=tk.NSEW)
-
-    box = tk.Listbox(frame, highlightthickness=0,
-                     yscrollcommand=scrollbar.set, selectmode=tk.EXTENDED)
-    box.grid(row=0, column=0, sticky=tk.NSEW)
-    scrollbar.config(command=box.yview)
-
-    box.insert(tk.END, *items)
-
-    box.config(height=clamp(len(items), 3, 10))
-
-    return frame
-
-
-class TitleReadFailResults(tk.Toplevel):
-    def __init__(self, parent: tk.Tk = None, *, failed: 'Dict[str, str]'):
-        super().__init__(parent)
-        self.parent = parent
-
-        self.wm_withdraw()
-        self.wm_transient(self.parent)
-        self.grab_set()
-        self.wm_title('Failed to add titles')
-
-        self.rowconfigure(0, weight=1)
-        self.columnconfigure(0, weight=1)
-
-        outer_container = ttk.Frame(self)
-        outer_container.grid(sticky=tk.NSEW)
-        outer_container.rowconfigure(0, weight=0)
-        outer_container.rowconfigure(1, weight=1)
-        outer_container.columnconfigure(0, weight=1)
-
-        message_label = ttk.Label(
-            outer_container, text="Some titles couldn't be added.")
-        message_label.grid(row=0, column=0, sticky=tk.NSEW, padx=10, pady=10)
-
-        treeview_frame = ttk.Frame(outer_container)
-        treeview_frame.grid(row=1, column=0, sticky=tk.NSEW)
-        treeview_frame.rowconfigure(0, weight=1)
-        treeview_frame.columnconfigure(0, weight=1)
-
-        treeview_scrollbar = ttk.Scrollbar(treeview_frame, orient=tk.VERTICAL)
-        treeview_scrollbar.grid(row=0, column=1, sticky=tk.NSEW)
-
-        treeview = ttk.Treeview(
-            treeview_frame, yscrollcommand=treeview_scrollbar.set)
-        treeview.grid(row=0, column=0, sticky=tk.NSEW, padx=10, pady=(0, 10))
-        treeview.configure(columns=('filepath', 'reason'), show='headings')
-
-        treeview.column('filepath', width=200, anchor=tk.W)
-        treeview.heading('filepath', text='File path')
-        treeview.column('reason', width=400, anchor=tk.W)
-        treeview.heading('reason', text='Reason')
-
-        treeview_scrollbar.configure(command=treeview.yview)
-
-        for path, reason in failed.items():
-            treeview.insert('', tk.END, text=path, iid=path,
-                            values=(basename(path), reason))
-
-        ok_frame = ttk.Frame(outer_container)
-        ok_frame.grid(row=2, column=0, sticky=tk.NSEW, padx=10, pady=(0, 10))
-        ok_frame.rowconfigure(0, weight=1)
-        ok_frame.columnconfigure(0, weight=1)
-
-        ok_button = ttk.Button(ok_frame, text='OK', command=self.destroy)
-        ok_button.grid(row=0, column=0)
-
-        self.wm_deiconify()
-
-
-class InstallResults(tk.Toplevel):
-    def __init__(self, parent: tk.Tk = None, *, install_state: 'Dict[str, List[str]]', copied_3dsx: bool,
-                 application_count: int):
-        super().__init__(parent)
-        self.parent = parent
-
-        self.wm_withdraw()
-        self.wm_transient(self.parent)
-        self.grab_set()
-        self.wm_title('Install results')
-
-        self.rowconfigure(0, weight=1)
-        self.columnconfigure(0, weight=1)
-
-        outer_container = ttk.Frame(self)
-        outer_container.grid(sticky=tk.NSEW)
-        outer_container.rowconfigure(0, weight=0)
-        outer_container.columnconfigure(0, weight=1)
-
-        if install_state['failed'] and install_state['installed']:
-            # some failed and some worked
-            message = ('Some titles were installed, some failed. Please check the output for more details.\n'
-                       'The ones that were installed can be finished with custom-install-finalize.')
-        elif install_state['failed'] and not install_state['installed']:
-            # all failed
-            message = 'All titles failed to install. Please check the output for more details.'
-        elif install_state['installed'] and not install_state['failed']:
-            # all worked
-            message = 'All titles were installed.'
-        else:
-            message = 'Nothing was installed.'
-
-        if install_state['installed'] and copied_3dsx:
-            message += '\n\ncustom-install-finalize has been copied to the SD card.'
-
-        if application_count >= 300:
-            message += (f'\n\nWarning: {application_count} installed applications were detected.\n'
-                        f'The HOME Menu will only show 300 icons.\n'
-                        f'Some applications (not updates or DLC) will need to be deleted.')
-
-        message_label = ttk.Label(outer_container, text=message)
-        message_label.grid(row=0, column=0, sticky=tk.NSEW, padx=10, pady=10)
-
-        if install_state['installed']:
-            outer_container.rowconfigure(1, weight=1)
-            frame = simple_listbox_frame(
-                outer_container, 'Installed', install_state['installed'])
-            frame.grid(row=1, column=0, sticky=tk.NSEW, padx=10, pady=(0, 10))
-
-        if install_state['failed']:
-            outer_container.rowconfigure(2, weight=1)
-            frame = simple_listbox_frame(
-                outer_container, 'Failed', install_state['failed'])
-            frame.grid(row=2, column=0, sticky=tk.NSEW, padx=10, pady=(0, 10))
-
-        ok_frame = ttk.Frame(outer_container)
-        ok_frame.grid(row=3, column=0, sticky=tk.NSEW, padx=10, pady=(0, 10))
-        ok_frame.rowconfigure(0, weight=1)
-        ok_frame.columnconfigure(0, weight=1)
-
-        ok_button = ttk.Button(ok_frame, text='OK', command=self.destroy)
-        ok_button.grid(row=0, column=0)
-
-        self.wm_deiconify()
-
-
-class CustomInstallGUI(ttk.Frame):
+class TitleManagerWindow(ttk.Frame):
     console = None
     b9_loaded = False
 
@@ -745,113 +557,8 @@ class CustomInstallGUI(ttk.Frame):
                            command=self.start_install)
         start.grid(row=0, column=3)
 
-        existing_games_frame = ttk.Frame(tab_control)
-        tab_control.add(existing_games_frame, text='Update games on SD card')
-        # existing_games_frame.grid(row=6, column=0, sticky=tk.NSEW)
-
-        existing_games_frame.rowconfigure(2, weight=1)
-        existing_games_frame.columnconfigure(0, weight=1)
-        self.existing_game_tv = ttk.Treeview(
-            existing_games_frame)
-        self.existing_game_tv.grid(row=2, column=0, sticky=tk.NSEW)
-        # self.existing_game_tv.configure(
-        #     columns=('id', 'name', 'type', 'version', 'size'), show='tree')
-        # self.existing_game_tv.column('id', width=150, anchor=tk.W)
-        # self.existing_game_tv.heading('id', text='Title ID')
-
-        # self.existing_game_tv.column('name', width=300, anchor=tk.W)
-        # self.existing_game_tv.heading('name', text='Title')
-
-        # self.existing_game_tv.column('type', width=150, anchor=tk.W)
-        # self.existing_game_tv.heading('type', text='Type')
-
-        # self.existing_game_tv.column('version', width=100, anchor=tk.W)
-        # self.existing_game_tv.heading('version', text='Version')
-
-        # self.existing_game_tv.column('size', width=100, anchor=tk.W)
-        # self.existing_game_tv.heading('size', text='Size')
-
-        def search_existing():
-            sd_root = self.file_picker_textboxes['sd'].get(
-                '1.0', tk.END).strip()
-            seeddb = self.file_picker_textboxes['seeddb'].get(
-                '1.0', tk.END).strip()
-            movable_sed = self.file_picker_textboxes['movable.sed'].get(
-                '1.0', tk.END).strip()
-            boot9 = self.file_picker_textboxes['boot9'].get(
-                '1.0', tk.END).strip()
-            self.update_search_text.configure(text='Reading title IDs')
-            t_ids = get_existing_title_ids(boot9, movable_sed, sd_root)
-            titles_searched = 0
-
-            install_queue = []
-            titles = collect_existing_titles(boot9, movable_sed, sd_root)
-            for r in titles:
-                self.update_search_progress.configure(
-                    value=titles_searched, maximum=len(t_ids)-1)
-                self.update_search_text.configure(
-                    text=f'{titles_searched+1}/{len(t_ids)}: checking updates and DLC for {r.title.short_desc}')
-                titles_searched += 1
-                self.existing_game_tv.insert('', tk.END, iid=r.id, text=f'{r.id} {
-                                             r.title.short_desc} by {r.title.publisher}', open=True)
-                dlc_available = False
-                update_available = False
-                update: TitleRelation = None
-                dlc: TitleRelation = None
-                if not r.dlc_installed or not r.update_installed:
-                    hshop_title = find_hshop_title(r.id)
-                    if hshop_title is None:
-                        continue
-                    related_content = find_candidate_linked_content(
-                        hshop_title.hshop_id)
-                    for rc in related_content:
-                        if rc.relation_type == 'Downloadable Content':
-                            dlc_available = True
-                            dlc = rc
-                        elif rc.related_item == 'Update':
-                            update_available = True
-                            update = rc
-                if r.dlc_installed or dlc_available:
-                    text = None
-                    if r.dlc_installed:
-                        text = 'Installed'
-                    else:
-                        text = 'Available'
-                        install_queue.append(dlc)
-                    self.existing_game_tv.insert(
-                        r.id, tk.END, text=f'{text} DLC for {r.title.short_desc}')
-                if r.update_installed or update_available:
-                    text = None
-                    if r.update_installed:
-                        text = 'Installed'
-                    else:
-                        text = 'Available'
-                        install_queue.append(update)
-                    self.existing_game_tv.insert(
-                        r.id, tk.END, text=f'{text} update for {r.title.short_desc}')
-
-            for q in install_queue:
-                self.queue.insert('', tk.END, text=q.related_item.hshop_id, iid=q.related_item.hshop_id,
-                                  values=(q.related_item.hshop_id, q.related_item.name))
-
-        load_all_btn = ttk.Button(
-            existing_games_frame, text='Search for existing games', command=lambda: Thread(target=search_existing).start())
-        load_all_btn.grid(row=0, column=0, sticky=tk.NSEW)
-
-        label_pair_frame = ttk.Frame(existing_games_frame)
-        label_pair_frame.grid(row=1, column=0, sticky=tk.NSEW)
-        label_pair_frame.rowconfigure(0, weight=1)
-        label_pair_frame.columnconfigure(0, weight=1)
-        label_pair_frame.columnconfigure(1, weight=1)
-
-        self.update_search_progress = ttk.Progressbar(
-            label_pair_frame, orient=tk.HORIZONTAL, mode='determinate')
-        self.update_search_progress.grid(
-            row=0, column=1, sticky=tk.NSEW)
-
-        self.update_search_text = ttk.Label(
-            label_pair_frame, text='Not searching')
-        self.update_search_text.grid(row=0, column=0, sticky=tk.NSEW)
+        tab_control.add(UpdaterFrame(self.file_picker_textboxes, self.queue,
+                        parent=self), text='Update games on SD card')
 
         self.status_label = ttk.Label(self, text='Waiting...')
         self.status_label.grid(row=7, column=0, sticky=tk.NSEW)
