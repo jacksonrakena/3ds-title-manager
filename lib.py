@@ -1,15 +1,19 @@
 import subprocess
 import sys
+from dataclasses import dataclass
 from os import environ, scandir
 from os.path import abspath, basename, dirname, isfile, join
 from pprint import pformat
 from sys import executable, platform
 from tempfile import TemporaryDirectory
+from typing import Literal
 
 from pyctr.crypto import CryptoEngine, Keyslot, get_seed, load_seeddb
 from pyctr.type.cdn import CDNError, CDNReader
 from pyctr.type.cia import CIAError, CIAReader
 from pyctr.type.ncch import NCCHSection
+from pyctr.type.sd import SDFilesystem
+from pyctr.type.smdh import AppTitle
 from pyctr.type.tmd import TitleMetadataError
 from pyctr.util import roundup
 
@@ -24,6 +28,18 @@ if platform == 'msys':
     platform = 'win32'
 
 is_windows = platform == 'win32'
+
+
+def get_app_title(title_id: str, fs: SDFilesystem):
+    title = fs.open_title(title_id)
+    # print(title.contents)
+    if title.contents is None or 0 not in title.contents:
+        return None
+    if title.contents[0].exefs is None:
+        return None
+    if title.contents[0].exefs.icon is None:
+        return None
+    return title.contents[0].exefs.icon.get_app_title()
 
 
 def get_sd_path(sd_path, crypto):
@@ -42,6 +58,60 @@ def get_sd_path(sd_path, crypto):
     return [sd_path, id1s]
 
 
+@dataclass
+class InstalledTitle():
+    id: str
+    title: AppTitle
+    update_installed: bool
+    dlc_installed: bool
+
+
+def collect_existing_titles(boot9, movable, root_sd_path):
+    crypto = CryptoEngine(boot9=boot9)
+    crypto.setup_sd_key_from_file(movable)
+    d = SDFilesystem(join(root_sd_path, 'Nintendo 3DS'), crypto=crypto)
+    dlc_byte = '8C'
+    update_byte = '0E'
+    game_byte = '00'
+    title_ids = get_existing_title_ids(boot9, movable, root_sd_path)
+
+    BYTE_RANGE_START = 6
+    BYTE_RANGE_END = 8
+    game_ids = [
+        x for x in title_ids if x[BYTE_RANGE_START:BYTE_RANGE_END] == game_byte]
+    update_ids = [
+        x for x in title_ids if x[BYTE_RANGE_START:BYTE_RANGE_END] == update_byte]
+    dlc_ids = [
+        x for x in title_ids if x[BYTE_RANGE_START:BYTE_RANGE_END] == dlc_byte]
+
+    titles: dict[str, InstalledTitle] = {}
+    for game in game_ids:
+        titles[game] = InstalledTitle(
+            game, get_app_title(game, d), False, False)
+
+    for update in update_ids:
+        related_game = update
+        related_game = related_game[:BYTE_RANGE_START] + \
+            game_byte + related_game[BYTE_RANGE_START + 2:]
+        if related_game not in titles.keys():
+            print(f'update {update} {get_app_title(update, d)
+                                     } installed, but game {related_game} is not')
+        else:
+            titles[related_game].update_installed = True
+
+    for dlc in dlc_ids:
+        related_game = dlc
+        related_game = related_game[:BYTE_RANGE_START] + \
+            game_byte + related_game[BYTE_RANGE_START + 2:]
+        if related_game not in titles.keys():
+            print(f'dlc {dlc} {get_app_title(dlc, d)
+                               } installed, but game {related_game} is not')
+        else:
+            titles[related_game].dlc_installed = True
+
+    return titles.values()
+
+
 def get_existing_title_ids(boot9, movable, root_sd_path) -> list[str]:
     if frozen:
         save3ds_fuse_path = join(script_dir, 'bin', 'save3ds_fuse')
@@ -55,36 +125,9 @@ def get_existing_title_ids(boot9, movable, root_sd_path) -> list[str]:
 
     crypto = CryptoEngine(boot9=boot9)
     crypto.setup_sd_key_from_file(movable)
-    # TODO: Move a lot of these into their own methods
-    print("Finding path to install to...")
-    [sd_path, id1s] = get_sd_path(root_sd_path, crypto)
-    if len(id1s) > 1:
-        raise RuntimeError(f'There are multiple id1 directories for id0 {crypto.id0.hex()}, '
-                           f'please remove extra directories')
-    elif len(id1s) == 0:
-        raise RuntimeError(f'Could not find a suitable id1 directory for id0 {
-            crypto.id0.hex()}')
-    id1 = id1s[0]
-    sd_path = join(sd_path, id1)
 
-    # if self.cifinish_out:
-    #     cifinish_path = self.cifinish_out
-    # else:
-    #     cifinish_path = join(self.sd, 'cifinish.bin')
-
-    # try:
-    #     cifinish_data = load_cifinish(cifinish_path)
-    # except InvalidCIFinishError as e:
-    #     self.log(f'{type(e).__qualname__}: {e}')
-    #     self.log(f'{cifinish_path} was corrupt!\n'
-    #              f'This could mean an issue with the SD card or the filesystem. Please check it for errors.\n'
-    #              f'It is also possible, though less likely, to be an issue with custom-install.\n'
-    #              f'Exiting now to prevent possible issues. If you want to try again, delete cifinish.bin from the SD card and re-run custom-install.')
-    #     return None, False, 0
-
-    db_path = join(sd_path, 'dbs')
-    titledb_path = join(db_path, 'title.db')
-    importdb_path = join(db_path, 'import.db')
+    d = SDFilesystem(join(root_sd_path, 'Nintendo 3DS'),
+                     crypto=crypto)
 
     with TemporaryDirectory(suffix='-custom-install') as tempdir:
         # set up the common arguments for the two times we call save3ds_fuse
@@ -99,11 +142,8 @@ def get_existing_title_ids(boot9, movable, root_sd_path) -> list[str]:
 
         extra_kwargs = {}
         if is_windows:
-            # hide console window
             extra_kwargs['creationflags'] = 0x08000000  # CREATE_NO_WINDOW
 
-        # extract the title database to add our own entry to
-        print('Extracting Title Database...')
         out = subprocess.run(save3ds_fuse_common_args + ['-x'],
                              stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT,

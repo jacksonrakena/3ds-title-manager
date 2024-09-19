@@ -21,3 +21,4 @@ venv/
 /dist/
 /custom-install-finalize.3dsx
 downloads
+config.ini

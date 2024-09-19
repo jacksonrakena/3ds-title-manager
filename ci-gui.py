@@ -29,6 +29,7 @@ from custominstall import (CI_VERSION, CustomInstall, InstallStatus,
                            InvalidCIFinishError, load_cifinish)
 from scrape import (_compile_meta_node, find_candidate_linked_content,
                     find_hshop_title)
+from utils import disable_children, enable_children
 
 if TYPE_CHECKING:
     from os import PathLike
@@ -302,7 +303,7 @@ class CustomInstallGUI(ttk.Frame):
 
         # ---------------------------------------------------------------- #
         # create file pickers for base files
-        file_pickers = ttk.Frame(self)
+        file_pickers = ttk.Labelframe(self, text='Configuration')
         file_pickers.grid(row=0, column=0, sticky=tk.EW)
         file_pickers.columnconfigure(1, weight=1)
 
@@ -395,10 +396,223 @@ class CustomInstallGUI(ttk.Frame):
         create_required_file_picker(
             'movable.sed', [('movable.sed file', '*.sed')], default_movable_sed_path, 3)
 
+        tab_control = ttk.Notebook(self)
+        tab_control.grid(row=2, column=0)
+
+        hshop_frame = ttk.Frame(tab_control)
+        tab_control.add(hshop_frame, text='Browse and download from hShop')
+
+        hshop_frame.rowconfigure(0, weight=1)
+        hshop_frame.rowconfigure(1, weight=1)
+        hshop_frame.columnconfigure(0, weight=1)
+
+        search_frame = ttk.Labelframe(
+            hshop_frame, text='Search hShop')
+        search_frame.grid(row=0, column=0)
+        search_frame.rowconfigure(0, weight=1)
+        search_frame.columnconfigure(0, weight=1)
+
+        def begin_search():
+            import urllib
+
+            import requests
+            from bs4 import BeautifulSoup
+            self.search.delete(*self.search.get_children())
+            query_page = requests.get(
+                f'https://hshop.erista.me/search/results?sd=descending&sb=downloads&q={urllib.parse.quote_plus(self.search_input.get())}&qt=Text&lgy=false')
+            soup = BeautifulSoup(query_page.text, 'html.parser')
+            for game in soup.find_all(name='a', attrs={
+                    'class': 'list-entry block-link'}):
+                base_info = game.find(name='div', attrs={'class': 'base-info'})
+                if base_info is None:
+                    continue
+                content_spec = base_info.find(name='h4')
+                if content_spec is None:
+                    continue
+
+                content_spec = content_spec.find_all(name='span', attrs={
+                    'class': 'green bold'})
+                if content_spec is None or len(content_spec) != 2:
+                    continue
+                category = content_spec[0].text
+                region = content_spec[1].text
+                game_title = game.find(name='h3', attrs={
+                    'class': 'green bold nospace'})
+                if game_title is None:
+                    continue
+                game_title = game_title.contents[0]
+
+                meta_info = _compile_meta_node(game)
+
+                if meta_info.hshop_id is not None:
+                    self.search.insert('', tk.END, iid=meta_info.hshop_id,
+                                       values=(meta_info.title_id, game_title, meta_info.version, f'{category}/{region}', meta_info.size))
+            pass
+        search_start = ttk.Button(
+            search_frame, text='Search', command=begin_search)
+        search_start.grid(row=2, column=0)
+        self.search_input = ttk.Entry(search_frame)
+        self.search_input.grid(row=1, column=0)
+
+        search_frame_scrollbar = ttk.Scrollbar(
+            search_frame, orient=tk.VERTICAL)
+        search_frame_scrollbar.grid(row=0, column=1)
+
+        self.search = ttk.Treeview(
+            search_frame, yscrollcommand=search_frame_scrollbar.set)
+        self.search.grid(row=0, column=0, sticky=tk.NSEW)
+        self.search.rowconfigure(0, weight=1)
+        self.search.columnconfigure(0, weight=1)
+        self.search.configure(
+            columns=('id', 'name', 'version', 'type', 'size'), show='headings')
+        self.search.column('id', width=150, anchor=tk.W)
+        self.search.column('name', width=300, anchor=tk.W)
+        self.search.column('version', width=100, anchor=tk.W)
+        self.search.column('type', width=100, anchor=tk.W)
+        self.search.column('size', width=100, anchor=tk.W)
+        self.search.heading('id', text='Title ID')
+        self.search.heading('name', text='Title name')
+        self.search.heading('version', text='Version')
+        self.search.heading('type', text='Type')
+        self.search.heading('size', text='Size')
+
+        def on_search_item_clicked(event):
+            item = self.search.item(self.search.identify(
+                'item', event.x, event.y), "values")
+            title_id = item[0]
+            title_name = item[1]
+            hshop_id = self.search.identify(
+                'item', event.x, event.y)
+            additional_content = find_candidate_linked_content(
+                self.search.identify(
+                    'item', event.x, event.y))
+            if len(additional_content) > 0:
+                answer = mb.askyesno('Additional content', f'Found the following additional content: {
+                    str.join(',', map(lambda x: x.relation_type, additional_content))}. Install?')
+                if answer:
+                    for a in additional_content:
+                        print(a.related_item.hshop_id)
+                        self.queue.insert(
+                            '', tk.END, iid=a.related_item.hshop_id, values=(a.related_item.title_id, f'{a.relation_type} for {title_name}'))
+            self.queue.insert('', tk.END, text=hshop_id, iid=hshop_id,
+                              values=(title_id, title_name))
+        self.search.bind('<Double-1>', on_search_item_clicked)
+
+        queue_frame = ttk.Labelframe(hshop_frame, text='Download queue')
+        queue_frame.grid(row=1, column=0, sticky=tk.NSEW)
+        queue_frame.rowconfigure(0, weight=1)
+        queue_frame.columnconfigure(0, weight=1)
+        self.queue = ttk.Treeview(queue_frame)
+        self.queue.grid(row=0, column=0)
+        self.queue.config(columns=('id', 'name'), show='headings')
+        self.queue.column('id', width=200, anchor=tk.W)
+        self.queue.heading('id', text='Title ID')
+        self.queue.column('name', width=200, anchor=tk.W)
+        self.queue.heading('name', text='Title name')
+
+        def start_downloads():
+            completed = 0
+            self.queue_progress.configure(
+                maximum=len(self.queue.get_children()), value=0)
+            fnames = []
+            for item in self.queue.get_children():
+                item_struct = self.queue.item(item, "values")
+                target_item_url = 'https://hshop.erista.me/t/' + item
+
+                self.current_item_progress.configure(
+                    maximum=1, value=0)
+
+                import requests
+                from bs4 import BeautifulSoup
+                self.pg_text.configure(
+                    text=f'Fetching metadata for {item_struct[1]} ({item})')
+                text = requests.get(
+                    target_item_url).text
+                bsoup = BeautifulSoup(text, 'html.parser')
+                download_url = bsoup.find_all(name='a', class_='btn')[
+                    0].attrs['href']
+
+                self.pg_text.configure(
+                    text=f'Requesting download for {item_struct[1]} ({item})')
+
+                print(download_url)
+
+                from pypdl import Pypdl
+                dl = Pypdl()
+                file = dl.start(file_path='downloads/',
+                                url=download_url, block=False, display=False)
+
+                def sizeof_fmt(num, suffix="B"):
+                    for unit in ("", "K", "M", "G", "T", "P", "E", "Z"):
+                        if abs(num) < 1024.0:
+                            return f"{num:3.2f}{unit}{suffix}"
+                        num /= 1024.0
+                    return f"{num:.1f}Yi{suffix}"
+
+                while dl.wait:
+                    pass
+                while not dl.completed:
+                    self.pg_text.configure(text=f'{item_struct[1]} ({item}): {
+                                           sizeof_fmt(dl.current_size)}/{sizeof_fmt(dl.size)} {dl.speed:3.2f}MB/s')
+                    self.current_item_progress.configure(
+                        maximum=dl.size, value=dl.current_size)
+
+                # from pySmartDL import SmartDL
+                # obj = SmartDL(download_url, progress_bar=False,
+                #               dest='downloads/')
+                # obj.start(blocking=False)
+                # while not obj.isFinished():
+                #     self.pg_text.configure(
+                #         text=f'{item_struct[1]} ({item}): {obj.get_dl_size(human=True)}/{obj.get_final_filesize(human=True)} {obj.get_speed(human=True)}')
+                #     self.current_download_progress.configure(
+                #         maximum=obj.get_final_filesize(), value=obj.get_dl_size())
+
+                # if obj.isSuccessful():
+                #     fnames.append(obj.get_dest())
+                #     completed += 1
+                #     self.download_item_progress.configure(value=completed)
+            self.pg_text.configure(
+                text='Completed ' + str(len(self.queue.get_children())) + ' downloads')
+
+            results = {}
+            for f in fnames:
+                success, reason = self.add_cia(f)
+                if not success:
+                    results[f] = reason
+
+            if results:
+                title_read_fail_window = TitleReadFailResults(
+                    self.parent, failed=results)
+                title_read_fail_window.focus()
+            self.sort_treeview()
+
+        def start_queue():
+            Thread(target=start_downloads).start()
+        download_button = ttk.Button(
+            queue_frame, text='Download', command=start_queue)
+        download_button.grid(row=1, column=0)
+
+        self.current_item_progress = ttk.Progressbar(
+            queue_frame, orient=tk.HORIZONTAL, mode='determinate')
+        self.current_item_progress.grid(row=2, column=0)
+
+        self.queue_progress = ttk.Progressbar(
+            queue_frame, orient=tk.HORIZONTAL, mode='determinate')
+        self.queue_progress.grid(row=3, column=0)
+
+        self.pg_text = ttk.Label(queue_frame, text='Waiting')
+        self.pg_text.grid(row=4, column=0)
+
+        # ---------------------------------------------------------------- #
+        # create treeview
+        install_frame = ttk.Frame(tab_control)
+        tab_control.add(install_frame, text='Install titles and CIAs')
+        # install_frame.grid(row=3, column=0, sticky=tk.NSEW)
+
         # ---------------------------------------------------------------- #
         # create buttons to add cias
-        titlelist_buttons = ttk.Frame(self)
-        titlelist_buttons.grid(row=1, column=0)
+        titlelist_buttons = ttk.Frame(install_frame)
+        titlelist_buttons.grid(row=0, column=0, sticky=tk.NSEW)
 
         def add_cias_callback():
             files = fd.askopenfilenames(parent=parent, title='Select CIA files', filetypes=[('CIA files', '*.cia')],
@@ -467,202 +681,73 @@ class CustomInstallGUI(ttk.Frame):
             titlelist_buttons, text='Remove selected', command=remove_selected_callback)
         remove_selected.grid(row=0, column=3)
 
-        search_frame = ttk.Frame(self)
-        search_frame.grid(row=2, column=0, sticky=tk.NSEW)
-        search_frame.rowconfigure(0, weight=1)
-        search_frame.columnconfigure(0, weight=1)
+        treeview_frame = ttk.Frame(install_frame)
+        treeview_frame.grid(row=1, column=0, sticky=tk.NSEW)
+        # treeview_frame.rowconfigure(0, weight=1)
+        # treeview_frame.columnconfigure(0, weight=1)
 
-        def begin_search():
-            import urllib
+        treeview_scrollbar = ttk.Scrollbar(treeview_frame, orient=tk.VERTICAL)
+        treeview_scrollbar.grid(row=0, column=1, sticky=tk.NSEW)
 
-            import requests
-            from bs4 import BeautifulSoup
-            self.search.delete(*self.search.get_children())
-            query_page = requests.get(
-                f'https://hshop.erista.me/search/results?sd=descending&sb=downloads&q={urllib.parse.quote_plus(self.search_input.get())}&qt=Text&lgy=false')
-            soup = BeautifulSoup(query_page.text, 'html.parser')
-            for game in soup.find_all(name='a', attrs={
-                    'class': 'list-entry block-link'}):
-                base_info = game.find(name='div', attrs={'class': 'base-info'})
-                if base_info is None:
-                    continue
-                content_spec = base_info.find(name='h4')
-                if content_spec is None:
-                    continue
+        self.treeview = ttk.Treeview(
+            treeview_frame, yscrollcommand=treeview_scrollbar.set)
+        self.treeview.grid(row=0, column=0, sticky=tk.NSEW)
+        self.treeview.configure(
+            columns=('filepath', 'titleid', 'titlename', 'status'), show='headings')
 
-                content_spec = content_spec.find_all(name='span', attrs={
-                    'class': 'green bold'})
-                if content_spec is None or len(content_spec) != 2:
-                    continue
-                category = content_spec[0].text
-                region = content_spec[1].text
-                game_title = game.find(name='h3', attrs={
-                    'class': 'green bold nospace'})
-                if game_title is None:
-                    continue
-                game_title = game_title.contents[0]
+        self.treeview.column('filepath', width=200, anchor=tk.W)
+        self.treeview.heading('filepath', text='File path')
+        self.treeview.column('titleid', width=70, anchor=tk.W)
+        self.treeview.heading('titleid', text='Title ID')
+        self.treeview.column('titlename', width=150, anchor=tk.W)
+        self.treeview.heading('titlename', text='Title name')
+        self.treeview.column('status', width=20, anchor=tk.W)
+        self.treeview.heading('status', text='Status')
 
-                meta_info = _compile_meta_node(game)
+        treeview_scrollbar.configure(command=self.treeview.yview)
 
-                if meta_info.hshop_id is not None:
-                    self.search.insert('', tk.END, iid=meta_info.hshop_id,
-                                       values=(meta_info.title_id, game_title, meta_info.version, f'{category}/{region}', meta_info.size))
-            pass
-        search_start = ttk.Button(
-            search_frame, text='Search', command=begin_search)
-        search_start.grid(row=2, column=0, sticky=tk.NSEW)
-        self.search_input = ttk.Entry(search_frame)
-        self.search_input.grid(row=1, column=0, sticky=tk.NSEW)
+        # ---------------------------------------------------------------- #
+        # create progressbar
 
-        search_frame_scrollbar = ttk.Scrollbar(
-            search_frame, orient=tk.VERTICAL)
-        search_frame_scrollbar.grid(row=0, column=1, sticky=tk.NSEW)
+        self.progressbar = ttk.Progressbar(
+            install_frame, orient=tk.HORIZONTAL, mode='determinate')
+        self.progressbar.grid(row=4, column=0, sticky=tk.NSEW)
 
-        self.search = ttk.Treeview(
-            search_frame, yscrollcommand=search_frame_scrollbar.set)
-        self.search.grid(row=0, column=0, sticky=tk.NSEW)
-        self.search.configure(
-            columns=('id', 'name', 'version', 'type', 'size'), show='headings')
-        self.search.column('id', width=150, anchor=tk.W)
-        self.search.column('name', width=300, anchor=tk.W)
-        self.search.column('version', width=100, anchor=tk.W)
-        self.search.column('type', width=100, anchor=tk.W)
-        self.search.column('size', width=100, anchor=tk.W)
-        self.search.heading('id', text='Title ID')
-        self.search.heading('name', text='Title name')
-        self.search.heading('version', text='Version')
-        self.search.heading('type', text='Type')
-        self.search.heading('size', text='Size')
+        # ---------------------------------------------------------------- #
+        # create start and console buttons
 
-        def on_search_item_clicked(event):
-            item = self.search.item(self.search.identify(
-                'item', event.x, event.y), "values")
-            title_id = item[0]
-            title_name = item[1]
-            hshop_id = self.search.identify(
-                'item', event.x, event.y)
-            additional_content = find_candidate_linked_content(
-                self.search.identify(
-                    'item', event.x, event.y))
-            if len(additional_content) > 0:
-                answer = mb.askyesno('Additional content', f'Found the following additional content: {
-                    str.join(',', map(lambda x: x.relation_type, additional_content))}. Install?')
-                if answer:
-                    for a in additional_content:
-                        print(a.related_item.hshop_id)
-                        self.queue.insert(
-                            '', tk.END, iid=a.related_item.hshop_id, values=(a.related_item.title_id, f'{a.relation_type} for {title_name}'))
-            self.queue.insert('', tk.END, text=hshop_id, iid=hshop_id,
-                              values=(title_id, title_name))
-        self.search.bind('<Double-1>', on_search_item_clicked)
+        control_frame = ttk.Frame(install_frame)
+        control_frame.grid(row=5, column=0)
 
-        self.queue = ttk.Treeview(search_frame)
-        self.queue.grid(row=0, column=1, sticky=tk.NSEW)
-        self.queue.config(columns=('id', 'name'), show='headings')
-        self.queue.column('id', width=200, anchor=tk.W)
-        self.queue.heading('id', text='Title ID')
-        self.queue.column('name', width=200, anchor=tk.W)
-        self.queue.heading('name', text='Title name')
+        self.skip_contents_var = tk.IntVar()
+        skip_contents_checkbox = ttk.Checkbutton(control_frame, text='Skip contents (only add to title database)',
+                                                 variable=self.skip_contents_var)
+        skip_contents_checkbox.grid(row=0, column=0)
 
-        def start_downloads():
-            completed = 0
-            self.download_item_progress.configure(
-                maximum=len(self.queue.get_children()), value=0)
-            fnames = []
-            for item in self.queue.get_children():
-                item_struct = self.search.item(item, "values")
-                target_item_url = 'https://hshop.erista.me/t/' + item
+        self.overwrite_saves_var = tk.IntVar()
+        overwrite_saves_checkbox = ttk.Checkbutton(control_frame, text='Overwrite existing saves',
+                                                   variable=self.overwrite_saves_var)
+        overwrite_saves_checkbox.grid(row=0, column=1)
 
-                self.current_download_progress.configure(
-                    maximum=1, value=0)
+        show_console = ttk.Button(
+            control_frame, text='Show console', command=self.open_console)
+        show_console.grid(row=0, column=2)
 
-                import requests
-                from bs4 import BeautifulSoup
-                self.pg_text.configure(
-                    text=f'Fetching metadata for {item_struct[1]} ({item})')
-                text = requests.get(
-                    target_item_url).text
-                bsoup = BeautifulSoup(text, 'html.parser')
-                download_url = bsoup.find_all(name='a', class_='btn')[
-                    0].attrs['href']
+        start = ttk.Button(control_frame, text='Start install',
+                           command=self.start_install)
+        start.grid(row=0, column=3)
 
-                self.pg_text.configure(
-                    text=f'Requesting download for {item_struct[1]} ({item})')
+        existing_games_frame = ttk.Frame(tab_control)
+        tab_control.add(existing_games_frame, text='Update games on SD card')
+        # existing_games_frame.grid(row=6, column=0, sticky=tk.NSEW)
 
-                print(download_url)
-
-                from pypdl import Pypdl
-                dl = Pypdl()
-                file = dl.start(file_path='downloads/',
-                                url=download_url, block=False, display=False)
-
-                def sizeof_fmt(num, suffix="B"):
-                    for unit in ("", "K", "M", "G", "T", "P", "E", "Z"):
-                        if abs(num) < 1024.0:
-                            return f"{num:3.2f}{unit}{suffix}"
-                        num /= 1024.0
-                    return f"{num:.1f}Yi{suffix}"
-
-                while dl.wait:
-                    pass
-                while not dl.completed:
-                    self.pg_text.configure(text=f'{item_struct[1]} ({item}): {
-                                           sizeof_fmt(dl.current_size)}/{sizeof_fmt(dl.size)} {dl.speed:3.2f}MB/s')
-                    self.current_download_progress.configure(
-                        maximum=dl.size, value=dl.current_size)
-
-                # from pySmartDL import SmartDL
-                # obj = SmartDL(download_url, progress_bar=False,
-                #               dest='downloads/')
-                # obj.start(blocking=False)
-                # while not obj.isFinished():
-                #     self.pg_text.configure(
-                #         text=f'{item_struct[1]} ({item}): {obj.get_dl_size(human=True)}/{obj.get_final_filesize(human=True)} {obj.get_speed(human=True)}')
-                #     self.current_download_progress.configure(
-                #         maximum=obj.get_final_filesize(), value=obj.get_dl_size())
-
-                # if obj.isSuccessful():
-                #     fnames.append(obj.get_dest())
-                #     completed += 1
-                #     self.download_item_progress.configure(value=completed)
-            self.pg_text.configure(
-                text='Completed ' + str(len(self.queue.get_children())) + ' downloads')
-
-            results = {}
-            for f in fnames:
-                success, reason = self.add_cia(f)
-                if not success:
-                    results[f] = reason
-
-            if results:
-                title_read_fail_window = TitleReadFailResults(
-                    self.parent, failed=results)
-                title_read_fail_window.focus()
-            self.sort_treeview()
-
-        def start_queue():
-            Thread(target=start_downloads).start()
-        download_button = ttk.Button(
-            search_frame, text='Download', command=start_queue)
-        download_button.grid(row=1, column=1, sticky=tk.NSEW)
-
-        self.download_item_progress = ttk.Progressbar(
-            search_frame, orient=tk.HORIZONTAL, mode='determinate')
-        self.download_item_progress.grid(row=3, column=1, sticky=tk.NSEW)
-
-        self.pg_text = ttk.Label(search_frame, text='')
-        self.pg_text.grid(row=4, column=1, sticky=tk.NSEW)
-        self.current_download_progress = ttk.Progressbar(
-            search_frame, orient=tk.HORIZONTAL, mode='determinate')
-        self.current_download_progress.grid(row=2, column=1, sticky=tk.NSEW)
-
-        existing_games_frame = ttk.Frame(self)
-        existing_games_frame.grid(row=7, column=0, sticky=tk.NSEW)
-
-        self.existing_game_tv = ttk.Treeview(existing_games_frame)
+        existing_games_frame.rowconfigure(2, weight=1)
+        existing_games_frame.columnconfigure(0, weight=1)
+        self.existing_game_tv = ttk.Treeview(
+            existing_games_frame)
         self.existing_game_tv.grid(row=2, column=0, sticky=tk.NSEW)
         self.existing_game_tv.configure(
-            columns=('id', 'name', 'type', 'version', 'size'), show='headings')
+            columns=('id', 'name', 'type', 'version', 'size'), show='tree')
         self.existing_game_tv.column('id', width=150, anchor=tk.W)
         self.existing_game_tv.heading('id', text='Title ID')
 
@@ -688,8 +773,46 @@ class CustomInstallGUI(ttk.Frame):
             boot9 = self.file_picker_textboxes['boot9'].get(
                 '1.0', tk.END).strip()
             self.update_search_text.configure(text='Reading title IDs')
-            from lib import get_existing_title_ids
+            from lib import collect_existing_titles, get_existing_title_ids
             t_ids = get_existing_title_ids(boot9, movable_sed, sd_root)
+            for r in collect_existing_titles(boot9, movable_sed, sd_root):
+                print(f'{r.id} {r.title.long_desc}: DLC {
+                      r.dlc_installed}, Update {r.update_installed}')
+                # self.existing_game_tv.insert('', tk.END, iid=r.id, values=(
+                #     r.id, r.title.short_desc, 'Game', r.title.publisher, 'None'), open=True)
+                self.existing_game_tv.insert('', tk.END, iid=r.id, text=f'{r.id} {
+                                             r.title.short_desc} by {r.title.publisher}', open=True)
+                dlc_available = False
+                update_available = False
+                if not r.dlc_installed or not r.update_installed:
+                    hshop_title = find_hshop_title(r.id)
+                    if hshop_title is None:
+                        continue
+                    self.update_search_text.configure(
+                        text=f'{hshop_title.name}')
+                    related_content = find_candidate_linked_content(
+                        hshop_title.hshop_id)
+                    for rc in related_content:
+                        if rc.relation_type == 'Downloadable Content':
+                            dlc_available = True
+                        elif rc.related_item == 'Update':
+                            update_available = True
+                if r.dlc_installed or dlc_available:
+                    text = None
+                    if r.dlc_installed:
+                        text = 'Installed'
+                    else:
+                        text = 'Available'
+                    self.existing_game_tv.insert(
+                        r.id, tk.END, text=f'{text} DLC for {r.title.short_desc}')
+                if r.update_installed or update_available:
+                    text = None
+                    if r.update_installed:
+                        text = 'Installed'
+                    else:
+                        text = 'Available'
+                    self.existing_game_tv.insert(
+                        r.id, tk.END, text=f'{text} update for {r.title.short_desc}')
             self.update_search_progress.configure(
                 value=0, maximum=len(t_ids)-1)
             install_queue = []
@@ -734,66 +857,8 @@ class CustomInstallGUI(ttk.Frame):
             label_pair_frame, text='Not searching')
         self.update_search_text.grid(row=0, column=0, sticky=tk.NSEW)
 
-        # ---------------------------------------------------------------- #
-        # create treeview
-        treeview_frame = ttk.Frame(self)
-        treeview_frame.grid(row=3, column=0, sticky=tk.NSEW)
-        treeview_frame.rowconfigure(0, weight=1)
-        treeview_frame.columnconfigure(0, weight=1)
-
-        treeview_scrollbar = ttk.Scrollbar(treeview_frame, orient=tk.VERTICAL)
-        treeview_scrollbar.grid(row=0, column=1, sticky=tk.NSEW)
-
-        self.treeview = ttk.Treeview(
-            treeview_frame, yscrollcommand=treeview_scrollbar.set)
-        self.treeview.grid(row=0, column=0, sticky=tk.NSEW)
-        self.treeview.configure(
-            columns=('filepath', 'titleid', 'titlename', 'status'), show='headings')
-
-        self.treeview.column('filepath', width=200, anchor=tk.W)
-        self.treeview.heading('filepath', text='File path')
-        self.treeview.column('titleid', width=70, anchor=tk.W)
-        self.treeview.heading('titleid', text='Title ID')
-        self.treeview.column('titlename', width=150, anchor=tk.W)
-        self.treeview.heading('titlename', text='Title name')
-        self.treeview.column('status', width=20, anchor=tk.W)
-        self.treeview.heading('status', text='Status')
-
-        treeview_scrollbar.configure(command=self.treeview.yview)
-
-        # ---------------------------------------------------------------- #
-        # create progressbar
-
-        self.progressbar = ttk.Progressbar(
-            self, orient=tk.HORIZONTAL, mode='determinate')
-        self.progressbar.grid(row=4, column=0, sticky=tk.NSEW)
-
-        # ---------------------------------------------------------------- #
-        # create start and console buttons
-
-        control_frame = ttk.Frame(self)
-        control_frame.grid(row=5, column=0)
-
-        self.skip_contents_var = tk.IntVar()
-        skip_contents_checkbox = ttk.Checkbutton(control_frame, text='Skip contents (only add to title database)',
-                                                 variable=self.skip_contents_var)
-        skip_contents_checkbox.grid(row=0, column=0)
-
-        self.overwrite_saves_var = tk.IntVar()
-        overwrite_saves_checkbox = ttk.Checkbutton(control_frame, text='Overwrite existing saves',
-                                                   variable=self.overwrite_saves_var)
-        overwrite_saves_checkbox.grid(row=0, column=1)
-
-        show_console = ttk.Button(
-            control_frame, text='Show console', command=self.open_console)
-        show_console.grid(row=0, column=2)
-
-        start = ttk.Button(control_frame, text='Start install',
-                           command=self.start_install)
-        start.grid(row=0, column=3)
-
         self.status_label = ttk.Label(self, text='Waiting...')
-        self.status_label.grid(row=6, column=0, sticky=tk.NSEW)
+        self.status_label.grid(row=7, column=0, sticky=tk.NSEW)
 
         self.log(
             f'custom-install {CI_VERSION} - https://github.com/ihaveamac/custom-install', status=False)
@@ -1045,7 +1110,7 @@ class CustomInstallGUI(ttk.Frame):
 
 
 window = tk.Tk()
-window.title(f'custom-install {CI_VERSION}')
+window.title(f'Jackson\'s 3DS Title Manager {CI_VERSION}')
 frame = CustomInstallGUI(window)
 frame.pack(fill=tk.BOTH, expand=True)
 window.mainloop()
