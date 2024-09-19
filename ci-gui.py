@@ -279,7 +279,7 @@ class CustomInstallGUI(ttk.Frame):
     b9_loaded = False
 
     def __init__(self, parent: tk.Tk = None):
-        super().__init__(parent)
+        super().__init__(parent, padding='10')
         self.parent = parent
 
         # readers to give to CustomInstall at the install
@@ -302,10 +302,14 @@ class CustomInstallGUI(ttk.Frame):
 
             self.after(100, setup_tab)
 
+        title_label = ttk.Label(
+            self, text="Jackson's 3DS Title Manager", font=('', 25), anchor='center')
+        title_label.grid(row=0, column=0, sticky=tk.EW)
+        self.rowconfigure(0, weight=1)
         # ---------------------------------------------------------------- #
         # create file pickers for base files
-        file_pickers = ttk.Labelframe(self, text='Configuration')
-        file_pickers.grid(row=0, column=0, sticky=tk.EW)
+        file_pickers = ttk.Labelframe(self, text='Configuration', padding='10')
+        file_pickers.grid(row=1, column=0, sticky=tk.EW)
         file_pickers.columnconfigure(1, weight=1)
 
         self.file_picker_textboxes = {}
@@ -397,8 +401,8 @@ class CustomInstallGUI(ttk.Frame):
         create_required_file_picker(
             'movable.sed', [('movable.sed file', '*.sed')], default_movable_sed_path, 3)
 
-        tab_control = ttk.Notebook(self)
-        tab_control.grid(row=2, column=0, sticky=tk.NSEW)
+        tab_control = ttk.Notebook(self, padding='0')
+        tab_control.grid(row=3, column=0, sticky=tk.NSEW)
 
         hshop_frame = ttk.Frame(tab_control)
         tab_control.add(hshop_frame, text='Browse and download from hShop')
