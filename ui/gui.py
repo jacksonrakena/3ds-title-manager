@@ -27,7 +27,6 @@ from pyctr.util import config_dirs
 
 from hshop.data import find_candidate_linked_content, find_hshop_title
 from hshop.parse import _compile_meta_node
-from hshop.types import TitleRelation
 from installer.custominstall import (CustomInstall, InvalidCIFinishError,
                                      load_cifinish)
 from sdfs.titles import collect_existing_titles, get_existing_title_ids
@@ -302,7 +301,7 @@ class TitleManagerWindow(ttk.Frame):
                     for a in additional_content:
                         total_inserts += 1
                         self.queue.insert(
-                            '', tk.END, iid=a.related_item.hshop_id, values=(a.related_item.title_id, f'{a.relation_type} for {title_name}'))
+                            '', tk.END, iid=a.hshop_id, values=(a.title_id, f'{a.relation_type} for {title_name}'))
             self.queue.insert('', tk.END, text=hshop_id, iid=hshop_id,
                               values=(title_id, title_name))
             self.search_state.configure(

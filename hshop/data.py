@@ -2,7 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from hshop.parse import _compile_meta_node
-from hshop.types import Title, TitleRelation
+from hshop.types import RelatedTitle, Title
 
 
 def find_hshop_title(title_id: str):
@@ -22,7 +22,7 @@ def find_hshop_title(title_id: str):
     return Title(meta.hshop_id, meta.title_id, meta.size, meta.version, meta.type, meta.product_code, title)
 
 
-def get_related_content(hshop_id: str) -> list[TitleRelation]:
+def get_related_content(hshop_id: str) -> list[RelatedTitle]:
     text = requests.get(f'https://hshop.erista.me/t/' + hshop_id).text
     bsoup = BeautifulSoup(text, 'html.parser')
     rc = related_content = bsoup.find_all(name='div', class_='related')
@@ -39,13 +39,13 @@ def get_related_content(hshop_id: str) -> list[TitleRelation]:
         relation_type = related_item.find_all(
             name='span', class_='bold')[0].text.replace('Relation: ', '')
         meta_info = _compile_meta_node(meta_blocks[1])
-        relation = TitleRelation(None, Title(meta_info.hshop_id, meta_info.title_id, meta_info.size,
-                                 meta_info.version, meta_info.type, meta_info.product_code, name), relation_type)
+        relation = RelatedTitle(meta_info.hshop_id, meta_info.title_id, meta_info.size,
+                                meta_info.version, meta_info.type, meta_info.product_code, name, relation_type)
         results.append(relation)
     return results
 
 
-def find_all_linked_content(hshop_id: str, seen=[]) -> list[TitleRelation]:
+def find_all_linked_content(hshop_id: str, seen=[]) -> list[RelatedTitle]:
     related_content = get_related_content(hshop_id)
 
     results = []
@@ -53,21 +53,21 @@ def find_all_linked_content(hshop_id: str, seen=[]) -> list[TitleRelation]:
         if r.relation_type == 'Base Title':
             continue
         results.append(r)
-        if r.related_item.hshop_id not in seen:
-            seen.append(r.related_item.hshop_id)
+        if r.hshop_id not in seen:
+            seen.append(r.hshop_id)
             results.extend(find_all_linked_content(
-                r.related_item.hshop_id, seen))
+                r.hshop_id, seen))
 
     seen = set()
     final_results = []
     for x in results:
-        if x.related_item.hshop_id not in seen:
+        if x.hshop_id not in seen:
             final_results.append(x)
-            seen.add(x.related_item.hshop_id)
+            seen.add(x.hshop_id)
     return final_results
 
 
-def find_candidate_linked_content(hshop_id: str) -> list[TitleRelation]:
+def find_candidate_linked_content(hshop_id: str) -> list[RelatedTitle]:
     related_content = find_all_linked_content(hshop_id)
     DESIRED_TYPES = ['Downloadable Content', 'Update Data']
     return [x for x in related_content if x.relation_type in DESIRED_TYPES]

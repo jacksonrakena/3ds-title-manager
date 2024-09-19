@@ -17,7 +17,5 @@ class Title(TitleMeta):
 
 
 @dataclass
-class TitleRelation:
-    base_item: Title
-    related_item: Title
+class RelatedTitle(Title):
     relation_type: str

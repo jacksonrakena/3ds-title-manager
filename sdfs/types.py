@@ -7,5 +7,5 @@ from pyctr.type.smdh import AppTitle
 class InstalledTitle:
     id: str
     title: AppTitle
-    update_installed: bool
-    dlc_installed: bool
+    update_id: str | None
+    dlc_id: str | None

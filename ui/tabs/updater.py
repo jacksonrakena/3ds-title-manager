@@ -3,7 +3,7 @@ import tkinter.ttk as ttk
 from threading import Thread
 
 from hshop.data import find_candidate_linked_content, find_hshop_title
-from hshop.types import TitleRelation
+from hshop.types import RelatedTitle
 from sdfs.titles import collect_existing_titles, get_existing_title_ids
 
 
@@ -44,9 +44,9 @@ class UpdaterFrame(ttk.Frame):
                     r.title.short_desc} by {r.title.publisher}', open=True)
                 dlc_available = False
                 update_available = False
-                update: TitleRelation = None
-                dlc: TitleRelation = None
-                if not r.dlc_installed or not r.update_installed:
+                update: RelatedTitle = None
+                dlc: RelatedTitle = None
+                if r.dlc_id is None or r.update_id is None:
                     hshop_title = find_hshop_title(r.id)
                     if hshop_title is None:
                         continue
@@ -56,31 +56,35 @@ class UpdaterFrame(ttk.Frame):
                         if rc.relation_type == 'Downloadable Content':
                             dlc_available = True
                             dlc = rc
-                        elif rc.related_item == 'Update':
+                        elif rc.relation_type == 'Update':
                             update_available = True
                             update = rc
-                if r.dlc_installed or dlc_available:
+                if r.dlc_id is not None or dlc_available:
                     text = None
-                    if r.dlc_installed:
-                        text = 'Installed'
+                    id = r.dlc_id
+                    if r.dlc_id is not None:
+                        text = 'Already installed:'
                     else:
-                        text = 'Available'
+                        text = 'Available:'
+                        id = dlc.title_id
                         install_queue.append(dlc)
                     self.treeview.insert(
-                        r.id, tk.END, text=f'{text} DLC for {r.title.short_desc}')
-                if r.update_installed or update_available:
+                        r.id, tk.END, text=f'{text} Downloadable Content ({id}) for {r.title.short_desc}')
+                if r.update_id is not None or update_available:
                     text = None
-                    if r.update_installed:
-                        text = 'Installed'
+                    id = r.update_id
+                    if r.update_id is not None:
+                        text = 'Already installed:'
                     else:
-                        text = 'Available'
+                        text = 'Available:'
+                        id = update.title_id
                         install_queue.append(update)
                     self.treeview.insert(
-                        r.id, tk.END, text=f'{text} update for {r.title.short_desc}')
+                        r.id, tk.END, text=f'{text} Update ({id}) for {r.title.short_desc}')
 
             for q in install_queue:
-                self.queue.insert('', tk.END, text=q.related_item.hshop_id, iid=q.related_item.hshop_id,
-                                  values=(q.related_item.hshop_id, q.related_item.name))
+                self.queue.insert('', tk.END, text=q.hshop_id, iid=q.hshop_id,
+                                  values=(q.hshop_id, q.name))
 
         load_all_btn = ttk.Button(
             self, text='Search for existing games', command=lambda: Thread(target=search_existing).start())

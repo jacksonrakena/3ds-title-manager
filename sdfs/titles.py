@@ -57,7 +57,7 @@ def collect_existing_titles(boot9: str, movable: str, root_sd_path: str):
     titles: dict[str, InstalledTitle] = {}
     for game in game_ids:
         titles[game] = InstalledTitle(
-            game, get_app_title(game, d), False, False)
+            game, get_app_title(game, d), None, None)
 
     for update in update_ids:
         related_game = update
@@ -67,7 +67,7 @@ def collect_existing_titles(boot9: str, movable: str, root_sd_path: str):
             print(f'update {update} {get_app_title(update, d)
                                      } installed, but game {related_game} is not')
         else:
-            titles[related_game].update_installed = True
+            titles[related_game].update_id = update
 
     for dlc in dlc_ids:
         related_game = dlc
@@ -77,7 +77,7 @@ def collect_existing_titles(boot9: str, movable: str, root_sd_path: str):
             print(f'dlc {dlc} {get_app_title(dlc, d)
                                } installed, but game {related_game} is not')
         else:
-            titles[related_game].dlc_installed = True
+            titles[related_game].dlc_id = dlc
 
     return titles.values()
 
