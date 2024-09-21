@@ -12,7 +12,7 @@ else:
     ]
 
 setup(
-    name="Jacksons3DSTitleManager",
+    name="Jackson's 3DS Title Manager",
     version="3.0",
     description="Easily download, update, and manage games on your 3DS SD card",
     executables=executables
