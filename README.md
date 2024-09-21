@@ -24,6 +24,8 @@ It features the following improvements over the original `custom-install` progra
 ## Summary
 You're gonna need a copy of [seeddb.bin](https://github.com/ihaveamac/3DS-rom-tools/wiki/SeedDB-list), and your [boot9.bin and movable.sed files](https://ihaveamac.github.io/dump.html), regardless of installation method.
 
+1. Download a copy of 3DS Title Manager from the 
+
 ### Windows standalone
 1. [Dump boot9.bin and movable.sed](https://ihaveamac.github.io/dump.html) from a 3DS system.
 2. Download the [latest releases](https://github.com/ihaveamac/custom-install/releases).
@@ -31,6 +33,8 @@ You're gonna need a copy of [seeddb.bin](https://github.com/ihaveamac/3DS-rom-to
 
 ### With installed Python
 Note for Windows users: Enabling "Add Python 3.X to PATH" is **NOT** required! Python is installed with the `py` launcher by default.
+
+
 
 1. [Dump boot9.bin and movable.sed](https://ihaveamac.github.io/dump.html) from a 3DS system.
 2. Download the repo ([zip link](https://github.com/ihaveamac/custom-install/archive/safe-install.zip) or `git clone`)
