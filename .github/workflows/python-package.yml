@@ -34,7 +34,7 @@ jobs:
       - name: Archive artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts
+          name: app-win
           path: |
             build
 
@@ -62,6 +62,6 @@ jobs:
       - name: Archive artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts
+          name: app-linux
           path: |
             build
