@@ -1,3 +1,5 @@
 events==0.5
 pyctr==0.7.5
 cx_Freeze==7.2.1
+beautifulsoup4==4.12.3
+requests==2.32.3
