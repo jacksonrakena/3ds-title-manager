@@ -27,7 +27,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install flake8 pytest
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          python -m pip install -r requirements-win32.txt
       - name: Build
         run: |
           python setup-cxfreeze.py build_exe
@@ -38,7 +38,7 @@ jobs:
           path: |
             build
 
-  build:
+  build-linux:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
